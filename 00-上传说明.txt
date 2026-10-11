@@ -1,5 +1,6 @@
 本次需提交的变更清单（对比基线：GitHub 当前 HEAD，对应本机 20261006guoapp3-main.zip 快照）
 ====================================================================
+【第七节为 2026-10-11 最新增补，若你只读一节，读第七节。一至六节为 1.1.0+80 首批清单，仍然有效。】
 
 本包为「覆盖/新增」叠加包：把包内文件按原路径放进仓库即可，包里没有的文件一律不要动。
 本批相对 HEAD 无任何删除文件，无需 git rm。
@@ -83,3 +84,47 @@
     红果目录持久化 6 项既有测试失败为基线遗留（fixture 与翻页时序问题，非本批引入，
     且 CI 中 go test 为 continue-on-error，不阻断出包）。
     Flutter/Dart 侧本机无工具链，由 CI 的 dart format / dart analyze / flutter test 验证。
+
+七、2026-10-11 增补：wrxbpq → guoapp3-main 移植（MacCMS/XBPQ poster-items 家族加固）
+    ----------------------------------------------------------------
+    背景：把规则生成器 wrxbpq 在 555yx.vip、qqys01.com 等真实站实测固化的解析能力，
+    移植进实际发布仓库 guoapp3-main 的 Go 原生核心。只改 native/core，
+    lib/（Flutter）、native/server/、test/、integration_test/ 本增补无改动，勿动。
+
+    覆盖文件（4 个，本包内已是最新，直接覆盖同名文件）：
+      native/core/provider_duanju_maccms.go     ★ DOM/XBPQ 共享加固：粘连详情ID（maccmsDetailGlued）、
+                                                  9槽dash分页候选、GET ?wd= 搜索+重定向护栏
+                                                  （maccmsSearchPageRecognized）、player_data encrypt=2
+                                                  双层解码、module-play-list-content 线路锚、
+                                                  iframe base64 末路取流（maccmsIframeBase64URL）、
+                                                  首页双ID体系探测（maccmsHomeDetailGlued：斜杠URL
+                                                  返回200但内容是另一部剧的站，粘连链接为主时详情
+                                                  格式粘连优先）
+      native/core/provider_duanju_dispatch.go   ★ 播放主线路是第三方 HTML 页（腾讯/优酷/B站）而非媒体
+                                                  时，自动换用看起来像媒体（m3u8）的备选线路
+      native/core/provider_xbpq_template.go     ★ XBPQ 内置简写模板 2 家族扩为 5 家族（MacCMS新版mxone /
+                                                  MacCMS接口JSON / MacCMS / 路径式泛型 / 通用高频），
+                                                  取消命中即停、改「专用→通用依次合并」，
+                                                  MacCMS 家族字段全面升级（[包含:] 门控、|| 备选链、
+                                                  播放列表=<a 分隔符语义）
+      native/core/provider_xbpq_test.go         ★ 追加模板层离线用例 5 个（共 10 项新回归中的 5 项）
+
+    新增文件（1 个）：
+      native/core/provider_duanju_poster_test.go ★ DOM 层离线回归 5 用例（粘连ID、poster 目录、
+                                                  encrypt=2 双层、搜索页识别、线路折叠）
+
+    以上 5 个 .go 文件 + README.md（已含第 7 点特性说明）构成全部增补改动。
+
+    验证结论（本机 2026-10-11，在 guoapp3-main 源仓库上）：
+      go build ./core、go vet ./core、go test ./core -c 全部通过；
+      新增 10 项离线回归全过（TestMaccms* 5 + TestXBPQ* 追加 5）；
+      四象限端到端全绿：DOM/XBPQ × qqys01.com/555yx.vip —— 目录真分页（qqys01 XBPQ 40/页、
+      重叠仅推荐位）、搜索全相关（15~18 条）、详情正确剧目（粘连优先修复后「凡人修仙传」383 集）、
+      多线路折叠、m3u8 经 /api/media 可播（#EXTM3U）；
+      既有失败仍只有 TestDuanjuRejectsMismatchedSourceIDsAndCategories（与本批无关的基线遗留）；
+      TestNativeHongguo*/Catalog* close of closed channel panic 为测试夹具既有 flake
+      （未改动的 guoapp3 快照同样复现），CI continue-on-error 不阻断。
+    本包 native/core 其余文件与本批同步前一致，抽查与 guoapp3-main 逐字节相等。
+
+    上传方式同第五节：把这 5 个文件 + README.md 按原路径覆盖/放入仓库，
+    git add -A && git commit -m "1.1.0+80: MacCMS/XBPQ poster-items 家族加固（wrxbpq 移植）" && git push

@@ -225,6 +225,21 @@ func (d *Downloader) resolveDuanjuWebPage(ctx context.Context, source, pageURL, 
 		// 同一集通常有多条线路（m3u8/云播/各视频站），详情只展示一条线路的集数，
 		// 其余线路在这里补齐，播放页就能用「线路 N」切换。
 		media.Variants = d.collectMaccmsRouteVariants(ctx, pageURL, address)
+		// MacCMS 混合资源站（qqys01.com 实测）：主线路可能是 v.qq.com/youku/bilibili
+		// 等第三方 HTML 页而非媒体直链；有媒体形态的备选线路时与其互换，
+		// 第三方线路降级留在备选里供手动切换。
+		if !duanjuLooksLikeMedia(address) {
+			for index, variant := range media.Variants {
+				if duanjuLooksLikeMedia(variant.URL) {
+					remaining := make([]providerMedia, 0, len(media.Variants))
+					remaining = append(remaining, media.Variants[:index]...)
+					remaining = append(remaining, media.Variants[index+1:]...)
+					media.URL, media.Referer = variant.URL, variant.Referer
+					media.Variants = append([]providerMedia{{URL: address, Referer: pageURL}}, remaining...)
+					break
+				}
+			}
+		}
 		return media, nil
 	}
 	// macplus 模板（如 MGMGTV）给出的是加密串：走 /static/player/<from>.js 的 iframe 云解析拿真实 m3u8。

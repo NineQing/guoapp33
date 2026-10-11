@@ -35,8 +35,9 @@ type maccmsSourceProfile struct {
 // 剧集链接形态：/vod/play/、/index.php/vod/play/、/vodplay/、/xksiplay/ 等自定义前缀、/drama-play、episode_id=。
 var maccmsEpisodeLink = regexp.MustCompile(`(?i)/(?:vod/)?play/|/[a-z0-9_]*play/|/drama-play|episode_id=|/nr/|/bofang/|/vplay/|/zplay/|/mplay/`)
 
-// 详情链接形态：/detail/、/index.php/vod/detail/、/voddetail/、/xksidetail/ 等自定义前缀。
-var maccmsDetailLink = regexp.MustCompile(`(?i)/(?:index\.php/vod/)?(?:detail|vod|show|view|movie|drama|zywview|xzyxvd)/|[a-z0-9_]*detail/`)
+// 详情链接形态：/detail/、/index.php/vod/detail/、/voddetail/、/xksidetail/ 等自定义前缀，
+// 以及关键词与 ID 直接粘连的 mxone poster-items 混合变体形态 /voddetail12543.html（qqys01 式）。
+var maccmsDetailLink = regexp.MustCompile(`(?i)/(?:index\.php/vod/)?(?:detail|vod|show|view|movie|drama|zywview|xzyxvd)/|[a-z0-9_]*detail/|(?:voddetail|detail|show|vod|drama|movie|tv|xs|vs)[0-9]{2,}`)
 
 func maccmsEpisodeNodes(document *html.Node) []*html.Node {
 	var nodes []*html.Node
@@ -45,7 +46,10 @@ func maccmsEpisodeNodes(document *html.Node) []*html.Node {
 			nodes = append(nodes, providerHTMLNodes(list, func(node *html.Node) bool { return node.Data == "a" })...)
 		}
 	}
-	for _, name := range []string{"content__playlist", "content__list", "playlink", "pcDrama_catalogItem", "catalogItem", "playlist"} {
+	for _, name := range []string{"content__playlist", "content__list", "playlink", "pcDrama_catalogItem", "catalogItem", "playlist",
+		// mxone（苹果新版）poster-items 皮肤：分集容器是 module-play-list-content，
+		// 每条线路一个；锚它可按 sid 折叠出正确线路（555yx.vip / qqys01.com 实测）。
+		"module-play-list-content"} {
 		collect(maccmsClassMatcher(name))
 	}
 	if len(nodes) == 0 {
@@ -377,6 +381,13 @@ func maccmsCategoryNavLink(link string) bool {
 	return false
 }
 
+// maccmsDetailGlued 匹配「关键词与 ID 之间没有斜杠」的粘连详情形态，
+// 如 mxone poster-items 混合变体（qqys01.com 式）的 /voddetail12543.html。
+// 不带这条，maccmsSourceIDFromURL 对粘连链接取不到 ID，maccmsCards 会因
+// SourceID 为空把每张海报卡都丢弃、整站目录塌成 0 条。vodplay 不在关键词表内，
+// 播放页 {id}-{sid}-{nid} 不会被误提取。
+var maccmsDetailGlued = regexp.MustCompile(`(?i)/(?:voddetail|detail|show|vod|drama|movie|tv|xs|vs)([1-9][0-9]{0,17})(?:[-./]|$)`)
+
 func maccmsSourceIDFromURL(link string) string {
 	parsed, err := url.Parse(link)
 	if err != nil {
@@ -384,6 +395,9 @@ func maccmsSourceIDFromURL(link string) string {
 	}
 	path := strings.TrimSuffix(parsed.Path, ".html")
 	if matches := maccmsDetailPath.FindStringSubmatch(path + "/"); len(matches) > 1 {
+		return matches[1]
+	}
+	if matches := maccmsDetailGlued.FindStringSubmatch(path + "/"); len(matches) > 1 {
 		return matches[1]
 	}
 	cleaned := strings.Trim(path, "/")
@@ -489,10 +503,12 @@ func (d *Downloader) fetchMaccmsCustomCatalog(ctx context.Context, source string
 		if profile.Family == "myui" {
 			candidates = append(candidates, profile.AllPage(base, page))
 			candidates = append(candidates, profile.Category(base, "1", page))
+			candidates = append(candidates, fmt.Sprintf("%s/vodshow/1--------%d---.html", base, page))
 		} else {
 			candidates = append(candidates, profile.AllPage(base, page))
 			candidates = append(candidates, fmt.Sprintf("%s/index.php/vod/show/page/%d.html", base, page))
 			candidates = append(candidates, fmt.Sprintf("%s/vodshow/1-----------%d.html", base, page))
+			candidates = append(candidates, fmt.Sprintf("%s/vodshow/1--------%d---.html", base, page))
 			candidates = append(candidates, fmt.Sprintf("%s/xksishow/1-----------%d.html", base, page))
 			candidates = append(candidates, fmt.Sprintf("%s/vodtype/1-%d.html", base, page))
 		}
@@ -502,6 +518,9 @@ func (d *Downloader) fetchMaccmsCustomCatalog(ctx context.Context, source string
 		if matches := regexp.MustCompile(`(\d{1,6})\.html$`).FindStringSubmatch(class); len(matches) > 1 {
 			id = matches[1]
 		}
+		// 优先 9 槽 dash 形态 `{id}--------{page}---`（wrxbpq 对 555yx.vip、
+		// qqys01.com 分页实测重叠 0 的形态）；11 连字符旧形态留在后面兜底。
+		candidates = append(candidates, fmt.Sprintf("%s/vodshow/%s--------%d---.html", base, id, page))
 		candidates = append(candidates, profile.Category(base, id, page))
 		candidates = append(candidates, base+strings.TrimSuffix(class, ".html")+"-"+strconv.Itoa(page)+".html")
 		candidates = append(candidates, fmt.Sprintf("%s/vodshow/%s-----------%d.html", base, id, page))
@@ -577,6 +596,7 @@ func (d *Downloader) fetchMaccmsDetail(ctx context.Context, source, sourceID str
 		candidates = append(profile.detailCandidates(base, sourceID), candidates...)
 		candidates = append(candidates, fmt.Sprintf("%s/index.php/vod/detail/id/%s.html", base, sourceID),
 			fmt.Sprintf("%s/voddetail/%s.html", base, sourceID),
+			fmt.Sprintf("%s/voddetail%s.html", base, sourceID),
 			fmt.Sprintf("%s/detail/%s.html", base, sourceID))
 	}
 	var lastErr error
@@ -810,7 +830,7 @@ func (d *Downloader) searchMaccms(ctx context.Context, source, query string) ([]
 	default:
 		return nil, errors.New("该站源不支持在线搜索")
 	}
-	document, _, err := d.fetchProviderPage(ctx, address, base+"/", duanjuUserAgent)
+	document, finalURL, err := d.fetchProviderPage(ctx, address, base+"/", duanjuUserAgent)
 	if err != nil {
 		if isCustomMaccmsSource(source) {
 			fallback := fmt.Sprintf("%s/index.php/vod/search/wd/%s.html", base, url.PathEscape(query))
@@ -822,15 +842,50 @@ func (d *Downloader) searchMaccms(ctx context.Context, source, query string) ([]
 		}
 		return nil, err
 	}
-	items := maccmsCards(document, source, base)
-	if len(items) == 0 && isCustomMaccmsSource(source) {
-		// 结果页模板不认识时，先试通用链接抽取，再退回 index.php 搜索形态。
-		items = maccmsGenericItems(document, source, base, 0)
+	custom := isCustomMaccmsSource(source)
+	// 搜索词被站点重定向回首页/分类页时（URL 里认不出搜索路径与关键词），
+	// 首页海报卡会被 maccmsCards 原样端出来，看着"有结果"其实是全站热门——
+	// 判为未命中，交给下面的 GET 形态兜底重试。
+	if custom && !maccmsSearchPageRecognized(finalURL, address, query) {
+		document = nil
 	}
-	if len(items) == 0 && isCustomMaccmsSource(source) {
-		fallback := fmt.Sprintf("%s/index.php/vod/search/wd/%s.html", base, url.PathEscape(query))
-		if !strings.EqualFold(fallback, address) {
-			if retry, _, retryErr := d.fetchProviderPage(ctx, fallback, base+"/", duanjuUserAgent); retryErr == nil {
+	var items []Drama
+	if document != nil {
+		items = maccmsCards(document, source, base)
+		if len(items) == 0 && custom {
+			// 结果页模板不认识时，先试通用链接抽取，再退回 index.php 搜索形态。
+			items = maccmsGenericItems(document, source, base, 0)
+		}
+		if len(items) == 0 && custom {
+			fallback := fmt.Sprintf("%s/index.php/vod/search/wd/%s.html", base, url.PathEscape(query))
+			if !strings.EqualFold(fallback, address) {
+				if retry, _, retryErr := d.fetchProviderPage(ctx, fallback, base+"/", duanjuUserAgent); retryErr == nil {
+					items = maccmsCards(retry, source, base)
+					if len(items) == 0 {
+						items = maccmsGenericItems(retry, source, base, 0)
+					}
+				}
+			}
+		}
+	}
+	if len(items) == 0 && custom {
+		// vodshow 系站点（555yx.vip / qqys01.com 实测）常见 GET 搜索形态：
+		// /vodsearch/-------------.html?wd=关键词，9 槽占位后挂 query。
+		getSearch := fmt.Sprintf("%s/vodsearch/-------------.html?wd=%s", base, url.QueryEscape(query))
+		if !strings.EqualFold(getSearch, address) {
+			if retry, retryFinalURL, retryErr := d.fetchProviderPage(ctx, getSearch, base+"/", duanjuUserAgent); retryErr == nil && maccmsSearchPageRecognized(retryFinalURL, getSearch, query) {
+				items = maccmsCards(retry, source, base)
+				if len(items) == 0 {
+					items = maccmsGenericItems(retry, source, base, 0)
+				}
+			}
+		}
+	}
+	if len(items) == 0 && custom {
+		// 兜底：只实现内嵌关键词路径的站点（/vodsearch/{关键词}-------------.html）。
+		embedded := fmt.Sprintf("%s/vodsearch/%s-------------.html", base, url.PathEscape(query))
+		if !strings.EqualFold(embedded, address) {
+			if retry, retryFinalURL, retryErr := d.fetchProviderPage(ctx, embedded, base+"/", duanjuUserAgent); retryErr == nil && maccmsSearchPageRecognized(retryFinalURL, embedded, query) {
 				items = maccmsCards(retry, source, base)
 				if len(items) == 0 {
 					items = maccmsGenericItems(retry, source, base, 0)
@@ -839,6 +894,37 @@ func (d *Downloader) searchMaccms(ctx context.Context, source, query string) ([]
 		}
 	}
 	return items, nil
+}
+
+// maccmsSearchPageRecognized 判断抓取到的页面是否真是搜索结果页：
+// 以**重定向后的最终 URL** 为准——路径里要认得出搜索段（search）且带着关键词。
+// 站点把内嵌搜索词的重定向回首页时，最终 URL 没有搜索段，判为未命中。
+func maccmsSearchPageRecognized(finalURL, requestURL, query string) bool {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return true
+	}
+	candidate := finalURL
+	if candidate == "" {
+		candidate = requestURL
+	}
+	parsed, err := url.Parse(candidate)
+	if err != nil {
+		return true
+	}
+	if !strings.Contains(strings.ToLower(parsed.Path), "search") {
+		return false
+	}
+	lower := strings.ToLower(candidate)
+	keywords := []string{strings.ToLower(trimmed),
+		strings.ToLower(url.PathEscape(trimmed)),
+		strings.ToLower(url.QueryEscape(trimmed))}
+	for _, keyword := range keywords {
+		if keyword != "" && strings.Contains(lower, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 func maccmsPlayerURL(body string) string {
@@ -860,6 +946,37 @@ func maccmsPlayerURL(body string) string {
 	}
 	if urlValue := fields["url"]; urlValue != "" {
 		return maccmsDecryptPlayerURL(urlValue, fields["encrypt"])
+	}
+	// 苹果CMS mxone 新版皮肤：iframe src="…/url?url=<base64 m3u8>"，
+	// 页面里没有 player_data JSON，直链藏在 base64 参数里（wrxbpq 同逻辑）。
+	if address := maccmsIframeBase64URL(body); address != "" {
+		return address
+	}
+	return ""
+}
+
+// maccmsIframeBase64URL 从 iframe src 的 base64 参数解出真实直链（解码后逗号分隔多源取第一个 http 形态）。
+var maccmsIframeBase64Pattern = regexp.MustCompile(`(?is)<iframe[^>]*?[?&]url=([A-Za-z0-9+/]{20,}={0,2})`)
+
+func maccmsIframeBase64URL(body string) string {
+	matches := maccmsIframeBase64Pattern.FindStringSubmatch(body)
+	if len(matches) < 2 {
+		return ""
+	}
+	decoded, err := base64.StdEncoding.DecodeString(matches[1])
+	if err != nil {
+		if padded := matches[1] + strings.Repeat("=", (4-len(matches[1])%4)%4); padded != matches[1] {
+			decoded, err = base64.StdEncoding.DecodeString(padded)
+		}
+		if err != nil {
+			return ""
+		}
+	}
+	for _, candidate := range strings.Split(string(decoded), ",") {
+		candidate = strings.TrimSpace(candidate)
+		if strings.HasPrefix(strings.ToLower(candidate), "http") {
+			return candidate
+		}
 	}
 	return ""
 }
@@ -904,6 +1021,15 @@ func maccmsDecryptPlayerURL(raw, encrypt string) string {
 	case "2":
 		if decoded, err := base64.StdEncoding.DecodeString(raw); err == nil {
 			return maccmsUnescapeJS(string(decoded))
+		}
+		// qqys01 式变体：base64 之外还外套一层 urlencode（每个 % 被转成 %25），
+		// 直解 base64 失败时先 QueryUnescape 再试一次。
+		if strings.ContainsRune(raw, '%') {
+			if unescaped, err := url.QueryUnescape(raw); err == nil && unescaped != raw {
+				if decoded, err := base64.StdEncoding.DecodeString(unescaped); err == nil {
+					return maccmsUnescapeJS(string(decoded))
+				}
+			}
 		}
 		return raw
 	default:
@@ -972,6 +1098,37 @@ func (p maccmsCustomProfile) detailCandidates(base, id string) []string {
 		out = append(out, fmt.Sprintf(format, base, id))
 	}
 	return out
+}
+
+var (
+	maccmsHomeGluedDetailLink   = regexp.MustCompile(`(?i)^/[a-z0-9_]*detail[1-9][0-9]*\.html$`)
+	maccmsHomeSlashedDetailLink = regexp.MustCompile(`(?i)^/[a-z0-9_]*detail/[1-9][0-9]*\.html$`)
+)
+
+// maccmsHomeDetailGlued 判断首页卡片详情链接是否以「粘连形态」为主
+// （/voddetail11738.html，关键词与 ID 之间无斜杠）。
+// qqys01.com 实测：粘连/斜杠两套 ID 体系并存，斜杠版返回 200 但内容是**另一部剧**
+// （/voddetail/11738.html → バジーノイズ），不是 404。详情候选若按默认「斜杠优先」
+// 会稳定抓错剧——必须以首页卡片的真实链接形态为准排序。
+func maccmsHomeDetailGlued(document *html.Node) bool {
+	if document == nil {
+		return false
+	}
+	glued, slashed := 0, 0
+	for _, anchor := range providerHTMLNodes(document, func(node *html.Node) bool { return node.Data == "a" }) {
+		href := strings.TrimSpace(providerHTMLAttr(anchor, "href"))
+		parsed, err := url.Parse(href)
+		if err != nil {
+			continue
+		}
+		switch {
+		case maccmsHomeGluedDetailLink.MatchString(parsed.Path):
+			glued++
+		case maccmsHomeSlashedDetailLink.MatchString(parsed.Path):
+			slashed++
+		}
+	}
+	return glued > 0 && glued >= slashed
 }
 
 var (
@@ -1149,6 +1306,7 @@ func fetchMaccmsCustomProfile(ctx context.Context, d *Downloader, base string) m
 		DetailFmts: []string{
 			"%s/index.php/vod/detail/id/%s.html",
 			"%s/voddetail/%s.html",
+			"%s/voddetail%s.html",
 			"%s/detail/%s.html",
 			"%s/vod/%s.html",
 		},
@@ -1208,12 +1366,31 @@ func fetchMaccmsCustomProfile(ctx context.Context, d *Downloader, base string) m
 		profile.TypePrefix = typePrefix
 		profile.DetailFmts = []string{
 			fmt.Sprintf("%%s/%sdetail/%%s.html", dash),
+			// mxone poster-items 混合变体（qqys01 式）：详情链接是粘连形态
+			// /voddetail12543.html（关键词与 ID 之间无斜杠），斜杠版 404 时兜底。
+			fmt.Sprintf("%%s/%sdetail%%s.html", dash),
 			"%s/voddetail/%s.html",
+			"%s/voddetail%s.html",
 			"%s/index.php/vod/detail/id/%s.html",
 			"%s/detail/%s.html",
 		}
+		// 首页卡片若以粘连链接为主（qqys01：斜杠版 200 但返回另一部剧，
+		// 不是 404），把粘连形态提到最前，避免详情抓错剧。
+		if maccmsHomeDetailGlued(document) {
+			profile.DetailFmts = []string{
+				fmt.Sprintf("%%s/%sdetail%%s.html", dash),
+				"%s/voddetail%s.html",
+				fmt.Sprintf("%%s/%sdetail/%%s.html", dash),
+				"%s/voddetail/%s.html",
+				"%s/index.php/vod/detail/id/%s.html",
+				"%s/detail/%s.html",
+			}
+		}
 		profile.Search = func(base, query string) string {
-			return fmt.Sprintf("%s/%ssearch/%s-------------.html", base, dash, url.PathEscape(query))
+			// GET wd= 形态（555yx.vip / qqys01.com 实测真执行搜索）；
+			// 内嵌形态 /vodsearch/{kw}-------------.html 不少站点只是回「最新」列表，
+			// 留作兜底（见 searchMaccms 的回退链）。
+			return fmt.Sprintf("%s/%ssearch/-------------.html?wd=%s", base, dash, url.QueryEscape(query))
 		}
 		profile.Category = func(base, category string, page int) string {
 			return fmt.Sprintf("%s/%sshow/%s-----------%d.html", base, dash, category, page)

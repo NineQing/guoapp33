@@ -472,3 +472,140 @@ func TestXBPQJSONModeCatalog(t *testing.T) {
 		t.Fatalf("j: 拼接链接错误: %q", got)
 	}
 }
+
+// ---- wrxbpq 模板家族同步回归（555yx.vip / qqys01.com 实测形态，全部离线）----
+
+// qqys01.com 简写规则（wrxbpq examples/qqys01.com.json 同款六字段）：
+// 只写 主页url/分类/分类url/搜索url/详情url，其余全靠内置模板补齐。
+const xbpqPosterRuleJSON = `{
+"主页url":"https://www.qqys01.com",
+"请求头":"User-Agent-Mozilla",
+"分类":"电影$1#连续剧$2#综艺$3#动漫$4",
+"分类url":"https://www.qqys01.com/vodshow/{cateId}--------{catePg}---.html",
+"搜索url":"https://www.qqys01.com/vodsearch/-------------.html?wd={wd}",
+"详情url":"https://www.qqys01.com/voddetail{id}.html"
+}`
+
+const xbpqPosterListPage = `<html><body><div class="module-page">
+<a href="/voddetail12543.html" title="超级少女" class="module-poster-item module-item">
+  <div class="module-item-pic"><img data-original="/upload/p1.jpg"></div>
+  <div class="module-item-titlebox"><div class="module-item-title">超级少女</div></div>
+  <div class="module-item-note">HD</div></a>
+<a href="/voddetail31722.html" title="第三者" class="module-poster-item module-item">
+  <div class="module-item-pic"><img data-original="/upload/p2.jpg"></div>
+  <div class="module-item-titlebox"><div class="module-item-title">第三者</div></div>
+  <div class="module-item-note">更新至8集</div></a>
+</div></body></html>`
+
+func TestXBPQPosterTemplateArrayAnchor(t *testing.T) {
+	rule, ok := parseXBPQRule(xbpqPosterRuleJSON)
+	if !ok {
+		t.Fatal("poster-items 简写规则解析失败")
+	}
+	array := rule.field("数组")
+	if !strings.Contains(array, `[包含:module-poster-item module-item]`) {
+		t.Fatalf("模板未补 module-poster-item [包含:] 数组锚点: %q", array)
+	}
+	if !strings.Contains(rule.field("播放数组"), `class="module-play-list-content&&</div>`) {
+		t.Fatal("模板未补 module-play-list-content 播放数组")
+	}
+	if rule.field("线路数组") != `class="module-play-list-content&&</div>` {
+		t.Fatalf("线路数组错误: %q", rule.field("线路数组"))
+	}
+	if !strings.Contains(rule.field("跳转播放链接"), `player_aaaa_`) {
+		t.Fatalf("跳转播放链接未含 player_aaaa_ 形态: %q", rule.field("跳转播放链接"))
+	}
+	if !strings.Contains(rule.field("副标题"), `module-item-note`) {
+		t.Fatal("副标题未补 module-item-note")
+	}
+	if !strings.Contains(rule.field("简介"), `module-info-intro-content`) {
+		t.Fatal("简介未补 module-info-intro-content")
+	}
+	if !strings.Contains(rule.field("搜索数组"), `module-card-item`) {
+		t.Fatal("搜索数组未补 module-card-item 锚点")
+	}
+	if rule.field("播放列表") != `<a` {
+		t.Fatalf("播放列表分隔符应为 <a（截取链），实际: %q", rule.field("播放列表"))
+	}
+}
+
+func TestXBPQPosterCatalogWithTemplateDefaults(t *testing.T) {
+	d, server := xbpqFixtureServer(t, func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = writer.Write([]byte(xbpqPosterListPage))
+	})
+	// 离线测试：规则里的站点域换成 fixture 地址，其余（含 9 槽 dash 分类url 形态）不变，
+	// 保证走同一套 MacCMS 模板识别与 [包含:] 数组锚点。
+	rule, _ := parseXBPQRule(strings.ReplaceAll(xbpqPosterRuleJSON, "https://www.qqys01.com", server.URL))
+	d.providerMu.Lock()
+	d.providerHosts["custom:pptest"] = server.URL
+	d.providerMu.Unlock()
+	items, _, err := d.xbpqCatalog(context.Background(), "custom:pptest", server.URL, 1, "1", rule)
+	if err != nil {
+		t.Fatalf("poster 模板目录失败: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("期望 2 条海报卡，实际 %d: %+v", len(items), items)
+	}
+	if items[0].Title != "超级少女" {
+		t.Fatalf("首条标题错误: %q", items[0].Title)
+	}
+	if items[0].SourceID != "12543" {
+		t.Fatalf("数字 ID 错误: %q", items[0].SourceID)
+	}
+}
+
+func TestXBPQDetailGluedLinkNumericID(t *testing.T) {
+	// 详情url 写了粘连模板 /voddetail{id}.html 时，目录 ID 应提数字形态。
+	rule, ok := parseXBPQRule(xbpqPosterRuleJSON)
+	if !ok {
+		t.Fatal("规则解析失败")
+	}
+	id := xbpqIDFromLink("https://www.qqys01.com/voddetail12543.html", rule.field("详情url", "详情页url") != "")
+	if id != "12543" {
+		t.Fatalf("粘连链接数字 ID 提取错误: %q", id)
+	}
+	page := xbpqRenderURL(rule.field("详情url", "详情页url"), "https://www.qqys01.com", map[string]string{"id": id})
+	if page != "https://www.qqys01.com/voddetail12543.html" {
+		t.Fatalf("详情url 模板渲染错误: %q", page)
+	}
+}
+
+func TestXBPQModulePlayListRoutesCollapse(t *testing.T) {
+	// mxone poster-items 详情页：两条线路各一个 module-play-list-content 容器。
+	body := `<html><body>
+<div class="module-play-list-content" data-dropdown-value="资源1">
+  <a class="module-play-list-link" href="/vodplay/31722-1-1.html"><span>第1集</span></a>
+  <a class="module-play-list-link" href="/vodplay/31722-1-2.html"><span>第2集</span></a>
+</div>
+<div class="module-play-list-content" data-dropdown-value="资源2">
+  <a class="module-play-list-link" href="/vodplay/31722-2-1.html"><span>第1集</span></a>
+  <a class="module-play-list-link" href="/vodplay/31722-2-2.html"><span>第2集</span></a>
+  <a class="module-play-list-link" href="/vodplay/31722-2-3.html"><span>第3集</span></a>
+</div></body></html>`
+	rule, ok := parseXBPQRule(xbpqPosterRuleJSON)
+	if !ok {
+		t.Fatal("规则解析失败")
+	}
+	best, routes := xbpqEpisodes(body, "https://www.qqys01.com/vodplay/31722-1-1.html", rule)
+	if len(routes) != 2 {
+		t.Fatalf("线路数 = %d, want 2", len(routes))
+	}
+	// 引擎会把相对分集链接绝对化（xbpqEpisodes 内 maccmsNormalizePlaybackURL 行为）。
+	if len(best) != 3 || best[2].url != "https://www.qqys01.com/vodplay/31722-2-3.html" {
+		t.Fatalf("最全线路错误: %+v", best)
+	}
+	if best[0].title != "第1集" {
+		t.Fatalf("分集标题错误: %q", best[0].title)
+	}
+}
+
+func TestXBPQIframeBase64Fallback(t *testing.T) {
+	// mxone 取流末路：播放页只有 iframe src="?url=<base64 m3u8>"，无 player_data。
+	m3u8 := "https://cdn.example.cn/20260721/8794_fe49fbfd/index.m3u8"
+	encoded := base64.StdEncoding.EncodeToString([]byte(m3u8))
+	body := `<html><body><iframe src="https://www.hanjuds.com/dafanjie/url?url=` + encoded + `"></iframe></body></html>`
+	if got := maccmsPlayerURL(body); got != m3u8 {
+		t.Fatalf("iframe base64 解码错误: %q want %q", got, m3u8)
+	}
+}

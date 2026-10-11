@@ -15,34 +15,99 @@ import (
 )
 
 // xbpqTemplateFamily 一种 分类url 形态对应的默认字段集。
+// 家族按「专用 → 通用」排序，命中的家族**依次合并**（先命中字段优先，
+// 后面的家族只补还没被覆盖的字段）——与 wrxbpq 的 template.go 同步。
 type xbpqTemplateFamily struct {
+	name   string
 	match  *regexp.Regexp
 	fields map[string]string
 }
 
 var xbpqTemplateFamilies = []xbpqTemplateFamily{
 	{
+		// 苹果CMS新版 mxone 皮肤（/template/mxone/，如 hanjuds.com、555yx.vip 分集区）：
+		// 分类形态「目录 + index-{cateId}-{catePg}.html」（列表目录名与域名无关，match 只认 index- 段）；
+		// 详情 /{dir}/{数字}.html、播放 /{dir}/play-{id}-{线}-{集}.html、
+		// 列表条目 div class="module-item"、多线路 div class="module-list module-player-list tab-list sort-list"。
+		// 关键差异：
+		//   ① 线路容器与分集容器同锚点——线路数组锚 tab-list（截出的每段=该线路分集框），
+		//      锚 module-tab-item 按钮会让每条线路 0 集；
+		//   ② 分集是 <a> 连排、段内无 #，播放列表分隔符写 </a>（不是 <li>/不是 #）；
+		//   ③ 取流是 iframe+base64 二级页（src="…/url?url=<base64 m3u8>"），
+		//      maccmsPlayerURL 末路解码，跳转播放链接【省略不写】。
+		name:  "MacCMS新版mxone",
+		match: regexp.MustCompile(`(?i)/index-(?:\{cateId\}|[0-9])[^/"?]*\.html`),
+		fields: map[string]string{
+			"数组":     `class="module-item"><div class="module-item-cover"&&</div></div>||<div class="module-item"&&</div></div>`,
+			"标题":     `title="&&"`,
+			"副标题":    `class="module-item-text">&&</div>`,
+			"图片":     `data-src="&&"||data-original="&&"`,
+			"链接":     `href="&&"`,
+			"播放数组":   `class="module-list module-player-list tab-list sort-list&&</div>`,
+			"线路数组":   `class="module-list module-player-list tab-list sort-list&&</div>`,
+			"播放列表":   `</a>`,
+			"播放标题":   `<span>&&</span>`,
+			"播放链接":   `href="&&"`,
+			"搜索数组":   `<div class="module-search-item"&&<div class="video-info-main">`,
+			"搜索标题":   `<h3>&&</h3>`,
+			"搜索链接":   `video-serial" href="&&"`,
+			"搜索图片":   `data-src="&&"`,
+		},
+	},
+	{
+		// MacCMS 自带 API（/api.php/provide/vod/，?ac=videolist|list）：列表层是 JSON。
+		// 模板库 §五：接口站列表用 j: 模式，详情/播放仍走 HTML 详情页。
+		name:  "MacCMS接口(JSON)",
+		match: regexp.MustCompile(`(?i)api\.php/provide/vod|/provide/vod/?|ac=videolist`),
+		fields: map[string]string{
+			"数组":     `j:list`,
+			"标题":     `j:vod_name`,
+			"图片":     `j:vod_pic`,
+			"副标题":    `j:vod_remarks`,
+			"链接":     `/index.php/vod/detail/id/+j:vod_id+.html`,
+			"详情url":  `/index.php/vod/detail/id/{id}.html`,
+			"搜索url":  `{host}/index.php/vod/search.html?wd={wd}`,
+			"播放数组":   `<ul class="stui-content__playlist&&</ul>||<ul class="myui-content__list&&</ul>`,
+			"播放列表":   `<a`,
+			"播放标题":   `>&&</a>||>&&<`,
+			"播放链接":   `href="&&"`,
+			"跳转播放链接": `var player_*"url":"&&"`,
+		},
+	},
+	{
 		// 苹果CMS/MacCMS 家族：/index.php/vod/show|type/…、/vodshow/…、/vodtype/…
 		// 页面多为 stui 模板；详情/播放/搜索均有高置信默认。
 		// || 备选链按 XBPQ.json 379 份真实规则聚类高频形态排序（stui→hl→module→通用）。
+		// mxone poster-items 皮肤（555yx.vip / qqys01.com 实测）：数组必须用
+		// `<a &&</a>[包含:module-poster-item module-item]`——直接锚
+		// `module-poster-item&&</a>` 会把卡片截半、目录塌成 1 条。
 		match: regexp.MustCompile(`(?i)/index\.php/vod/(show|type)/|/vod(show|type)[/_]|vod-list-id-`),
 		fields: map[string]string{
-			"数组":     `class="stui-vodlist__thumb&&</a>||stui-vodlist__box">&&</div></div>||hl-item-thumb hl-lazy"&&</a>||module-poster-item&&</a>||<li&&</li>`,
+			"数组":     `class="myui-vodlist__thumb&&</a>||class="myui-vodlist__box&&</a>||class="stui-vodlist__thumb&&</a>||stui-vodlist__box">&&</div></div>||hl-item-thumb hl-lazy"&&</a>||<a &&</a>[包含:module-poster-item module-item]||<li class="col-md-6&&</li>||<li&&</li>`,
 			"标题":     `title="&&"||alt="&&"`,
 			"图片":     `data-original="&&"||data-src="&&"||src="&&"`,
-			"副标题":    `pic-text text-right">&&</span>||class="remark">&&<||module-item-text">&&</div>`,
+			"副标题":    `pic-text text-right">&&</span>||class="remark">&&<||module-item-text">&&</div>||class="module-item-note">&&</div>`,
 			"链接":     `href="&&"`,
-			"简介":     `detail-content" style=*>&&</span>||class="stui-content__detail&&</div>||简介：</em>&&`,
-			"播放数组":   `<ul class="stui-content__playlist&&</ul>||id="hl-plays-list"&&</ul>||mod play-list&&</ul||class="play_box&&</div>||<ul class="item clearfix&&</ul>`,
-			"播放列表":   `<a&&</a>`,
-			"播放标题":   `>&&</a>||>&&<`,
+			"简介":     `detail-content" style=*>&&</span>||class="stui-content__detail&&</div>||简介：</em>&&||class="module-info-intro-content&&</div>`,
+			"播放数组":   `<ul class="stui-content__playlist&&</ul>||<ul class="myui-content__list&&</ul>||id="hl-plays-list"&&</ul>||mod play-list&&</ul||class="play_box&&</div>||class="module-play-list-content&&</div>`,
+			// mxone 皮肤线路数组：每个 module-play-list-content 容器即一条线路，
+			// 引擎按线路数组循环截取并以 $$$ 拼多线路（xbpqEpisodes）。
+			"线路数组": `class="module-play-list-content&&</div>`,
+			// 播放列表是**分集分隔符**（字面 Split），不是截取串：`<a` 切出每个
+			// 分集片段后由 播放标题/播放链接 再截；写 `<a&&</a>` 会切不中塌成 1 集。
+			"播放列表":   `<a`,
+			"播放标题":   `>&&</a>||>&&<||<span>&&</span>`,
 			"播放链接":   `href="&&"`,
-			"线路标题":   `<h3 class="title">&&</h3>||play_tit&&</`,
+			"线路标题":   `<h3 class="title">&&</h3>||<span class="title">&&</span>||play_tit&&</||data-name="&&"`,
 			// 聚类最高频跳转形态（15 处，含尾引号——单侧无尾锚会吃到页尾）：
-			// var player_ 前缀锚点不会误命中同页 var maccms 的 "url":"。
-			"跳转播放链接": `var player_*"url":"&&"`,
+			// var player_ 前缀锚点不会误命中同页 var maccms 的 "url":"；
+			// player_aaaa_ 是 mxone（苹果新版）皮肤的同族变体（qqys01 实测）。
+			"跳转播放链接": `var player_*"url":"&&"||player_aaaa_*"url":"&&"`,
 			"搜索url":  `{host}/index.php/vod/search.html?wd={wd}`,
-			"搜索数组":   `class="stui-vodlist__thumb&&</a>||<li&&</li>`,
+			"搜索数组":   `<div class="module-card-item module-item&&<div class="module-card-item module-item||class="stui-vodlist__thumb&&</a>||<li&&</li>`,
+			"搜索标题":   `title="&&"||<strong>&&</strong>||alt="&&"`,
+			"搜索链接":   `href="&&"`,
+			"搜索图片":   `data-original="&&"||data-src="&&"`,
 		},
 	},
 	{
@@ -61,6 +126,19 @@ var xbpqTemplateFamilies = []xbpqTemplateFamily{
 			"播放链接":   `href="&&"`,
 			"线路标题":   `<h3 class="title">&&</h3>`,
 			"跳转播放链接": `var player_*"url":"&&"`,
+		},
+	},
+	{
+		// 通用高频字段兜底（wrxbpq 模板库 §〇全局 Top-1）：任何有 分类url 的形态都命中。
+		// 只补全局最稳的字段，绝不猜 数组/播放数组 这类站专属结构。
+		name:  "通用高频",
+		match: regexp.MustCompile(`.`),
+		fields: map[string]string{
+			"标题":   `title="&&"||alt="&&"`,
+			"链接":   `href="&&"`,
+			"图片":   `data-original="&&"||data-src="&&"||src="&&"`,
+			"播放标题": `>&&</a>||>&&<`,
+			"播放链接": `href="&&"`,
 		},
 	},
 }
@@ -95,7 +173,9 @@ func (r *xbpqRule) xbpqApplyTemplate() {
 				r.order = append(r.order, key)
 			}
 		}
-		break
+		// 不 break：与 wrxbpq template.go 同步——专用→通用依次合并，
+		// 后面的命中家族只补还没被覆盖的字段（如 mxone 命中后仍要
+		// MacCMS/通用高频 补 简介/搜索url/跳转播放链接 等缺口）。
 	}
 	r.fields["模板已套用"] = "1"
 }
