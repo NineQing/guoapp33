@@ -128,3 +128,27 @@
 
     上传方式同第五节：把这 5 个文件 + README.md 按原路径覆盖/放入仓库，
     git add -A && git commit -m "1.1.0+80: MacCMS/XBPQ poster-items 家族加固（wrxbpq 移植）" && git push
+
+八、2026-10-11 追加：自定义源「从网络地址导入」默认值
+    ----------------------------------------------------------------
+    需求：导入自定义源弹窗的「从网络地址导入」一栏给出默认地址，遥控器端也要能选中；
+    网络地址输入框保留、仍可手动改。四端（Android / iOS / macOS / Windows 共用
+    lib/）+ 本地服务器版（native/server/web）都要有。
+
+    覆盖文件（2 个，已同步到本包）：
+      lib/custom_sources_screen.dart                 ★ 新增 CustomSourceImportPreset 与
+                                                      customSourceImportPresets 常量（默认配置地址）；
+                                                      打开弹窗即预填该地址；输入框下方新增可聚焦的
+                                                      预设按钮（OutlinedButton.icon，遥控器方向键可
+                                                      选中，选中后填入并把光标移到末尾）；当前地址等于
+                                                      预设时按钮呈选中态。输入框本身完全保留。
+      native/server/web/app.js                       ★ 新增 CS_IMPORT_DEFAULT_URL 常量；网络地址弹窗
+                                                      的文本域预填该地址，并新增「使用默认地址」按钮可
+                                                      一键恢复（走 escapeHTML 转义后再写入 innerHTML）。
+
+    默认地址（两端一致）：
+      https://cfkua.wokaotianshi.eu.org/https://raw.githubusercontent.com/wokaotianshi123/wokaotianshi123.github.io/refs/heads/main/hongguo/config.json
+
+    验证：node --check native/server/web/app.js 通过（本机无 Flutter/Dart 工具链，
+    Dart 侧由 CI 的 dart format / dart analyze / flutter test 验证）；Dart 文件括号配平自检通过，
+    现有测试未引用该弹窗的 key，无用例受影响。

@@ -1787,6 +1787,12 @@ function bindCustomSourcesView(items) {
   });
 }
 
+// 网络地址导入栏的默认配置地址：打开弹窗即预填，也可点「使用默认地址」恢复，
+// 输入框保留且可手动改成任意地址。
+var CS_IMPORT_DEFAULT_URL =
+  'https://cfkua.wokaotianshi.eu.org/https://raw.githubusercontent.com/' +
+  'wokaotianshi123/wokaotianshi123.github.io/refs/heads/main/hongguo/config.json';
+
 function openCustomSourceImportUrlDialog() {
   var overlay = document.createElement('div');
   overlay.style.cssText =
@@ -1797,7 +1803,13 @@ function openCustomSourceImportUrlDialog() {
     '<h3 style="margin:0 0 14px">从网络地址导入</h3>' +
     '<div style="font-size:12px;opacity:0.75;margin-bottom:10px">粘贴 TVBox 配置 / JSON / TXT 远程地址，核心自动抓取并解析导入；「导入文件」仍可本地选择。</div>' +
     '<textarea id="cs-import-url" spellcheck="false" placeholder="https://…/config.json" ' +
-    'style="width:100%;min-height:70px;font-family:monospace;font-size:12px;box-sizing:border-box;background:var(--bg,#12161f);color:inherit;border:1px solid var(--border,#333);border-radius:8px;padding:8px"></textarea>' +
+    'style="width:100%;min-height:70px;font-family:monospace;font-size:12px;box-sizing:border-box;background:var(--bg,#12161f);color:inherit;border:1px solid var(--border,#333);border-radius:8px;padding:8px">' +
+    escapeHTML(CS_IMPORT_DEFAULT_URL) +
+    '</textarea>' +
+    '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+    '<span style="font-size:12px;opacity:0.75">默认地址：</span>' +
+    '<button type="button" class="btn" id="cs-import-default" style="font-size:12px;padding:4px 10px">使用默认地址</button>' +
+    '</div>' +
     '<div id="cs-import-error" style="color:#ff8b90;font-size:12px;min-height:18px;margin-top:8px"></div>' +
     '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">' +
     '<button type="button" class="btn" id="cs-import-cancel">取消</button>' +
@@ -1809,6 +1821,15 @@ function openCustomSourceImportUrlDialog() {
   var errorBox = document.getElementById('cs-import-error');
   var goButton = document.getElementById('cs-import-go');
   var cancelButton = document.getElementById('cs-import-cancel');
+  var defaultButton = document.getElementById('cs-import-default');
+  if (defaultButton && urlInput) {
+    defaultButton.addEventListener('click', function () {
+      urlInput.value = CS_IMPORT_DEFAULT_URL;
+      errorBox.textContent = '';
+      urlInput.focus();
+      urlInput.setSelectionRange(urlInput.value.length, urlInput.value.length);
+    });
+  }
   if (urlInput) urlInput.focus();
   function close() {
     document.body.removeChild(overlay);

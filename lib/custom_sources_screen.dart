@@ -13,6 +13,27 @@ import 'models.dart';
 import 'remote_widgets.dart';
 import 'widgets.dart';
 
+/// 网络地址导入栏的预设配置地址。
+///
+/// 打开「从网络地址导入」时默认填入第一项，用户也可点选恢复；输入框仍可手动
+/// 修改成任意地址。遥控器端这些预设是可聚焦按钮，方向键能选中。
+class CustomSourceImportPreset {
+  const CustomSourceImportPreset(this.name, this.url);
+
+  final String name;
+  final String url;
+}
+
+/// 内置预设：默认直接使用该远程配置，无需用户手输长地址。
+const List<CustomSourceImportPreset> customSourceImportPresets =
+    <CustomSourceImportPreset>[
+  CustomSourceImportPreset(
+    '默认配置',
+    'https://cfkua.wokaotianshi.eu.org/https://raw.githubusercontent.com/'
+        'wokaotianshi123/wokaotianshi123.github.io/refs/heads/main/hongguo/config.json',
+  ),
+];
+
 /// 电视（Android TV 遥控器）焦点模式下的输入框方向键处理器。
 ///
 /// [TextField] 内部的 [EditableText] 会把四个方向键当作光标移动消费掉，事件
@@ -615,10 +636,22 @@ class _CustomSourceImportDialog extends StatefulWidget {
 }
 
 class _CustomSourceImportDialogState extends State<_CustomSourceImportDialog> {
-  final TextEditingController _url = TextEditingController();
+  final TextEditingController _url = TextEditingController(
+    text: customSourceImportPresets.isEmpty
+        ? ''
+        : customSourceImportPresets.first.url,
+  );
   final FocusNode _urlNode =
       _tvFieldNode(debugLabel: 'custom-source-import-url');
   bool _fileMode = true;
+
+  /// 选中某个预设地址：填入输入框并把光标移到末尾，仍可继续手动编辑。
+  void _applyPreset(CustomSourceImportPreset preset) {
+    setState(() {
+      _url.text = preset.url;
+      _url.selection = TextSelection.collapsed(offset: preset.url.length);
+    });
+  }
 
   @override
   void dispose() {
@@ -723,6 +756,26 @@ class _CustomSourceImportDialogState extends State<_CustomSourceImportDialog> {
                         border: OutlineInputBorder(),
                       ),
                     ),
+                    if (customSourceImportPresets.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      const Text(
+                        '可选默认地址（点击填入，仍可手动修改）',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final preset in customSourceImportPresets)
+                            _ImportPresetChip(
+                              preset: preset,
+                              selected: _url.text.trim() == preset.url,
+                              onSelected: () => _applyPreset(preset),
+                            ),
+                        ],
+                      ),
+                    ],
                     if (television)
                       const Padding(
                         padding: EdgeInsets.only(top: 8),
@@ -750,6 +803,43 @@ class _CustomSourceImportDialogState extends State<_CustomSourceImportDialog> {
             child: const Text('导入'),
           ),
       ],
+    );
+  }
+}
+
+/// 网络地址导入栏的预设地址按钮。
+///
+/// 触屏点击、遥控器方向键聚焦选中都可以：选中后把地址填入输入框，输入框本身
+/// 保留且仍可手动编辑。电视模式下它是普通可聚焦按钮，方向键可进可出。
+class _ImportPresetChip extends StatelessWidget {
+  const _ImportPresetChip({
+    required this.preset,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final CustomSourceImportPreset preset;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return OutlinedButton.icon(
+      key: ValueKey('custom-source-import-preset-${preset.name}'),
+      onPressed: onSelected,
+      style: OutlinedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        backgroundColor: selected ? scheme.primaryContainer : null,
+        side: BorderSide(
+          color: selected ? scheme.primary : scheme.outlineVariant,
+        ),
+      ),
+      icon: Icon(
+        selected ? Icons.check_circle_rounded : Icons.cloud_download_rounded,
+        size: 18,
+      ),
+      label: Text(preset.name, style: const TextStyle(fontSize: 13)),
     );
   }
 }
