@@ -253,7 +253,9 @@ func (client *yeguoAPIClient) requestClient() *http.Client {
 			}
 		}
 		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		// 与 d.client 保持一致：RootCAs 用「系统信任库 + 打包 CA 全集」，避免 Android 端
+		// 因缺少 Certum 等小众公共根而报 "certificate signed by unknown authority"。
+		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: systemCertPoolWithBundle()}
 		if client.downloader.cfg.InsecureTLS {
 			transport.TLSClientConfig = transport.TLSClientConfig.Clone()
 			transport.TLSClientConfig.InsecureSkipVerify = true
