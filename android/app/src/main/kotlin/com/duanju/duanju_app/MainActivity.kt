@@ -20,6 +20,7 @@ import android.net.ConnectivityManager
 import android.net.Uri
 import android.util.Rational
 import android.view.InputDevice
+import android.view.WindowManager
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -28,6 +29,43 @@ class MainActivity : FlutterActivity() {
     private var thermalHeadroom: Double? = null
     private var deviceChannel: MethodChannel? = null
     private var televisionMode = false
+
+    // 播放页左半屏竖向拖动临时调亮度：只改本窗口 screenBrightness（-1f 表示跟随系统），
+    // 不动系统全局亮度设置，退出播放 reset 后自动恢复，无需 WRITE_SETTINGS 权限。
+    private fun effectiveScreenBrightness(): Double {
+        val local = window.attributes.screenBrightness
+        if (local >= 0f) return local.toDouble()
+        val resolver = contentResolver
+        val system = runCatching {
+            android.provider.Settings.System.getInt(
+                resolver,
+                android.provider.Settings.System.SCREEN_BRIGHTNESS
+            )
+        }.getOrNull()
+        if (system == null) return .5
+        val auto = runCatching {
+            android.provider.Settings.System.getInt(
+                resolver,
+                android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE
+            )
+        }.getOrNull() == android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTO
+        if (auto) {
+            val autoValue = runCatching {
+                android.provider.Settings.System.getInt(
+                    resolver,
+                    "screen_auto_brightness_adj"
+                )
+            }.getOrNull() ?: 128
+            return (autoValue.coerceIn(0, 255)) / 255.0
+        }
+        return system / 255.0
+    }
+
+    private fun applyScreenBrightness(value: Float) {
+        val attributes = window.attributes
+        attributes.screenBrightness = value.coerceIn(0.01f, 1f)
+        window.attributes = attributes
+    }
 
     @Suppress("DEPRECATION")
     private fun isTelevisionDevice(): Boolean {
@@ -155,6 +193,23 @@ class MainActivity : FlutterActivity() {
                             ))
                         }
                         "pictureInPictureStatus" -> result.success(pictureInPictureStatus())
+                        "screenBrightness" -> result.success(effectiveScreenBrightness())
+                        "setScreenBrightness" -> {
+                            val value = call.argument<Double>("value")
+                            if (value == null || value.isNaN() || value.isInfinite()) {
+                                result.error("invalid_brightness", "缺少亮度值", null)
+                            } else {
+                                applyScreenBrightness(value.toFloat())
+                                result.success(null)
+                            }
+                        }
+                        "resetScreenBrightness" -> {
+                            val attributes = window.attributes
+                            attributes.screenBrightness =
+                                WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                            window.attributes = attributes
+                            result.success(null)
+                        }
                         "enterPictureInPicture" -> {
                             val width = call.argument<Int>("width") ?: 16
                             val height = call.argument<Int>("height") ?: 9
