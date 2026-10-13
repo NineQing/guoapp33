@@ -148,7 +148,6 @@ void main() {
       PointerDownEvent(
         pointer: 1,
         position: const Offset(400, 200),
-        localPosition: const Offset(400, 200),
         buttons: kPrimaryButton,
         kind: PointerDeviceKind.touch,
         timeStamp: Duration.zero,
@@ -162,7 +161,6 @@ void main() {
         PointerMoveEvent(
           pointer: 1,
           position: Offset(400 + step * 60, 200),
-          localPosition: Offset(400 + step * 60, 200),
           buttons: kPrimaryButton,
           kind: PointerDeviceKind.touch,
           timeStamp: Duration(milliseconds: 100 * step),
@@ -174,7 +172,6 @@ void main() {
       PointerUpEvent(
         pointer: 1,
         position: const Offset(640, 200),
-        localPosition: const Offset(640, 200),
         buttons: 0,
         kind: PointerDeviceKind.touch,
         timeStamp: const Duration(milliseconds: 420),
@@ -188,7 +185,6 @@ void main() {
       PointerDownEvent(
         pointer: 2,
         position: const Offset(400, 200),
-        localPosition: const Offset(400, 200),
         buttons: kPrimaryButton,
         kind: PointerDeviceKind.touch,
         timeStamp: Duration.zero,
@@ -201,7 +197,6 @@ void main() {
       PointerMoveEvent(
         pointer: 2,
         position: const Offset(320, 200),
-        localPosition: const Offset(320, 200),
         buttons: kPrimaryButton,
         kind: PointerDeviceKind.touch,
         timeStamp: const Duration(milliseconds: 160),
@@ -211,7 +206,6 @@ void main() {
       PointerUpEvent(
         pointer: 2,
         position: const Offset(320, 200),
-        localPosition: const Offset(320, 200),
         buttons: 0,
         kind: PointerDeviceKind.touch,
         timeStamp: const Duration(milliseconds: 200),
@@ -249,7 +243,6 @@ void main() {
       PointerDownEvent(
         pointer: 1,
         position: const Offset(100, 200),
-        localPosition: const Offset(100, 200),
         buttons: kPrimaryButton,
         kind: PointerDeviceKind.touch,
         timeStamp: Duration.zero,
@@ -263,7 +256,6 @@ void main() {
         PointerMoveEvent(
           pointer: 1,
           position: Offset(100, 200 - step * 40),
-          localPosition: Offset(100, 200 - step * 40),
           buttons: kPrimaryButton,
           kind: PointerDeviceKind.touch,
           timeStamp: Duration(milliseconds: 120 * step),
@@ -277,7 +269,6 @@ void main() {
       PointerUpEvent(
         pointer: 1,
         position: const Offset(100, 80),
-        localPosition: const Offset(100, 80),
         buttons: 0,
         kind: PointerDeviceKind.touch,
         timeStamp: const Duration(milliseconds: 380),
@@ -290,7 +281,6 @@ void main() {
       PointerDownEvent(
         pointer: 2,
         position: const Offset(100, 200),
-        localPosition: const Offset(100, 200),
         buttons: kPrimaryButton,
         kind: PointerDeviceKind.touch,
         timeStamp: Duration.zero,
@@ -303,7 +293,6 @@ void main() {
       PointerMoveEvent(
         pointer: 2,
         position: const Offset(100, 90),
-        localPosition: const Offset(100, 90),
         buttons: kPrimaryButton,
         kind: PointerDeviceKind.touch,
         timeStamp: const Duration(milliseconds: 120),
@@ -313,7 +302,6 @@ void main() {
       PointerUpEvent(
         pointer: 2,
         position: const Offset(100, 90),
-        localPosition: const Offset(100, 90),
         buttons: 0,
         kind: PointerDeviceKind.touch,
         timeStamp: const Duration(milliseconds: 160),
