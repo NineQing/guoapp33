@@ -35,7 +35,7 @@ class PlayerInteractions extends ChangeNotifier {
   final String Function(int direction) onEpisode;
   final Future<void> Function(Duration)? onSeek;
   final Future<void> Function(double value)? onBrightness;
-  final double Function()? currentBrightness;
+  final double? Function()? currentBrightness;
   late final StreamSubscription<bool> _playing;
   Timer? _holdTimer;
   Timer? _hintTimer;
@@ -419,7 +419,7 @@ class PlayerInteractions extends ChangeNotifier {
   static String _formatDuration(Duration value) {
     final minutes = value.inMinutes;
     final seconds = value.inSeconds.remainder(60);
-    return minutes > 0 ? '$minutes 分 ${seconds} 秒' : '$seconds 秒';
+    return minutes > 0 ? '$minutes 分 $seconds 秒' : '$seconds 秒';
   }
 
   @override
