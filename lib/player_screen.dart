@@ -123,6 +123,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _pictureInPictureActive = false;
   bool _pictureInPictureRequested = false;
   bool _pictureInPictureHandlerInstalled = false;
+  bool _brightnessAdjusted = false;
+  double? _cachedBrightness;
   AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
   String _loadingMessage = '正在准备播放';
   String? _error;
@@ -231,11 +233,14 @@ class _PlayerScreenState extends State<PlayerScreen>
         unawaited(_play(next, showControlsOnReady: false));
         return '第 ${widget.detail.episodes[next].number} 集';
       },
+      onBrightness: _androidBrightness ? _setScreenBrightness : null,
+      currentBrightness: _androidBrightness ? _currentBrightness : null,
     );
     _playerFocus.addListener(() {
       if (!_playerFocus.hasPrimaryFocus && !_closed) _interactions.cancel();
     });
     _configurePictureInPicture();
+    unawaited(_readSystemBrightness());
     _subscriptions.add(
       _player.stream.error.listen((error) {
         if (_enhancement.handlePlaybackError(error)) return;
@@ -1418,6 +1423,54 @@ class _PlayerScreenState extends State<PlayerScreen>
     unawaited(_seekTo(target));
   }
 
+  bool get _androidBrightness => defaultTargetPlatform == TargetPlatform.android;
+
+  double? _currentBrightness() {
+    return _cachedBrightness;
+  }
+
+  Future<void> _setScreenBrightness(double value) async {
+    if (_closed) return;
+    _cachedBrightness = value;
+    _brightnessAdjusted = true;
+    try {
+      await AppDevice.channel.invokeMethod<void>('setScreenBrightness', {
+        'value': value,
+      });
+    } on PlatformException {
+      _notice('亮度调整失败');
+    } on MissingPluginException {
+      _notice('亮度调整失败');
+    }
+  }
+
+  Future<void> _resetScreenBrightness() async {
+    if (!_brightnessAdjusted) return;
+    _brightnessAdjusted = false;
+    _cachedBrightness = null;
+    try {
+      await AppDevice.channel.invokeMethod<void>('resetScreenBrightness');
+    } on PlatformException {
+      // 恢复失败不打扰用户：窗口亮度覆盖只在本 Activity 存续，返回即失效。
+    } on MissingPluginException {
+      // 同上。
+    }
+  }
+
+  Future<void> _readSystemBrightness() async {
+    if (!_androidBrightness || _brightnessAdjusted) return;
+    try {
+      final value = await AppDevice.channel.invokeMethod<double>(
+        'screenBrightness',
+      );
+      _cachedBrightness = value;
+    } on PlatformException {
+      _cachedBrightness = null;
+    } on MissingPluginException {
+      _cachedBrightness = null;
+    }
+  }
+
   Future<void> _televisionEpisodes(BuildContext context) async {
     if (_panelOpen || _closed) return;
     setState(() => _panelOpen = true);
@@ -1528,6 +1581,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void dispose() {
     _closed = true;
+    unawaited(_resetScreenBrightness());
     final enhancementClosed = _enhancement.close();
     LanController.current?.detachPlayback(_lanIdentity);
     widget.handoff?.fail('接收端已退出播放');
