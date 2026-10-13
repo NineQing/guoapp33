@@ -48,7 +48,7 @@ class MainActivity : FlutterActivity() {
                 resolver,
                 android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE
             )
-        }.getOrNull() == android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTO
+        }.getOrNull() == android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
         if (auto) {
             val autoValue = runCatching {
                 android.provider.Settings.System.getInt(
