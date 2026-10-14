@@ -1,6 +1,6 @@
 本次需提交的变更清单（对比基线：GitHub 当前 HEAD，对应本机 20261006guoapp3-main.zip 快照）
 ====================================================================
-【第七节为 2026-10-11 最新增补，若你只读一节，读第七节。一至六节为 1.1.0+80 首批清单，仍然有效。】
+【第七节为 2026-10-11 增补，第九节为 2026-10-14 最新追加（1.1.1+83 播放器手势 + 1.2.0+84 源显示列表），若你只读一节，读第九节。一至六节为 1.1.0+80 首批清单，仍然有效。第四节中「index.html 无改动」已被第九节推翻：本批 index.html 需覆盖。】
 
 本包为「覆盖/新增」叠加包：把包内文件按原路径放进仓库即可，包里没有的文件一律不要动。
 本批相对 HEAD 无任何删除文件，无需 git rm。
@@ -67,6 +67,7 @@
     .github/workflows/build.yml（本地与 HEAD 完全一致，无需处理）
     pubspec.yaml / pubspec.lock / android / ios / windows / macos / scripts（本批无改动，勿动）
     native/server/web/index.html、app.css、hls.min.js（无改动）
+      ↑ 注：index.html 在第九节（1.2.0+84）已重新改动并需覆盖；app.css、hls.min.js 仍无改动。
     dist/、build/ 为本地空构建目录，忽略。
 
 五、上传方式（二选一）
@@ -152,3 +153,55 @@
     验证：node --check native/server/web/app.js 通过（本机无 Flutter/Dart 工具链，
     Dart 侧由 CI 的 dart format / dart analyze / flutter test 验证）；Dart 文件括号配平自检通过，
     现有测试未引用该弹窗的 key，无用例受影响。
+
+九、2026-10-14 追加：1.1.1+83 播放器手势 + 1.2.0+84 源显示列表（当前源码 1.2.0+84）
+    ----------------------------------------------------------------
+    本轮两批改动合并进本包，共 13 个文件（覆盖 12 + 新增 1），全部为本地最新版，按原路径覆盖/放入即可：
+
+    新增文件（1 个）：
+      native/server/visibility.go        ★ 源显示列表服务端：隐藏集合持久化到数据目录
+                                          source-visibility.json（原子写入）；
+                                          /api/source-visibility GET 列全部可用站源+可见状态，
+                                          POST {id,visible} 切换。
+
+    覆盖文件（12 个）：
+      lib/local_store.dart               ★ 每用户 hiddenSites 持久化 + visibleSources +
+                                          setSiteVisible；source getter 在可见源中回落；
+                                          备份导出/恢复/校验支持 hiddenSites。
+      lib/sources_screen.dart            ★ 站源管理页顶部新增「源显示列表」入口卡片；
+                                          新增 SourceVisibilityScreen（分组开关+全部显示）。
+      lib/home_screen.dart               ★ 首页站源分组/目录过滤改用可见站源；
+                                          当前源被隐藏自动落到首个可见源；空态区分提示。
+      lib/player_interactions.dart       ★ 1.1.1：手势状态机分层——进度条区域水平拖动
+                                          快退/快进；左半屏慢速竖拖临时亮度；
+                                          快速竖扫仍切集（onSeek/onBrightness/currentBrightness）。
+      lib/player_screen.dart             ★ 1.1.1：Android 窗口级亮度 MethodChannel 接入
+                                          （apply/reset/readSystemBrightness，退出播放恢复）；
+                                          非 Android 不启用亮度手势。
+      android/app/src/main/kotlin/com/duanju/duanju_app/MainActivity.kt
+                                         ★ 1.1.1：duanju/device 通道三方法，
+                                          window.attributes.screenBrightness（免系统权限），
+                                          SCREEN_BRIGHTNESS_MODE_AUTOMATIC 常量修复。
+      test/player_interactions_test.dart ★ 1.1.1：拖动 seek 与亮度手势两个新单测；
+                                          移除 Pointer 事件不存在的 localPosition 参数。
+      native/server/main.go              ★ 1.2.0：/api/sources 每源附 visible 标记；
+                                          注册 /api/source-visibility；启动时
+                                          setVisibilityDirectory。
+      native/server/web/index.html       ★ 1.2.0：顶栏「自定义源」旁新增「源显示」入口。
+      native/server/web/app.js           ★ 1.2.0：源显示管理页（checkbox 即时保存）；
+                                          loadSources 下拉只列可见源、保留全量名称映射。
+      pubspec.yaml                       ★ 版本 1.1.1+83 → 1.2.0+84。
+      README.md                          ★ 1.2.0/1.1.1 两轮特性说明与平台状态更新。
+
+    注意：本包 lib/player_screen.dart 与 native/server/web/app.js 现在同时包含
+    1.1.0+80 去广告/规则改动与本轮改动（本地最新即全部叠加），直接覆盖即可。
+    本批无删除文件；其余文件勿动。
+
+    验证结论（本机 2026-10-14，在 guoapp3-main 源仓库上）：
+      go build ./server、go vet ./server 通过；node --check web/app.js 通过；
+      包内 12 个覆盖文件与源仓库逐字节一致。
+      本机无 Flutter/Dart 工具链，Dart 侧（含 test/player_interactions_test.dart）
+      由 CI 的 dart format / dart analyze / flutter test 验证。
+
+    上传方式同第五节：按原路径覆盖/放入本包文件，
+    git add -A && git commit -m "1.2.0+84: 源显示列表管理与播放器手势（进度条拖动、左半屏亮度）" && git push
