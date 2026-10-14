@@ -2,9 +2,17 @@
 
 自编译版加入 韩小圈，鬼片，A123（青空已下线移除）
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.2.0+85（未验证开发快照）**。1.0.0 起默认版显示名为“短剧视界”、`--all-sources` 全站源版为“全剧视界”，分发文件名前缀为 `duanjushijie` / `quanjushijie`；GitHub Release 只发布短剧视界版安装包，全剧视界版只在 Actions Artifact 下载；Android Actions 不再保留构建日志上传。上一轮（1.0.2+76）新增播放线路选择与线路复用：清晰度按钮右侧新增“线路 N”按钮，点击打开线路列表，可在播放中切换线路并保留当前位置与播放状态；选定线路后，同一剧集的后续集数（含自动连播、遥控上一集 / 下一集、滑动切集、选集菜单）默认复用该线路，不再从第一条线路重新尝试；切换下一集时默认不再弹出暂停按钮，只有单击画面、按空格暂停等原有操作才显示控制层，静默数秒自动隐藏的逻辑保留。线路列表来自站源返回的同一集多地址（按画质优先排序），原生核心新增 `selectRoute` 动作与 `nativePreferredRoute` 收敛 0 值与越界值，Dart 端切换线路时保留原会话再重开，切集时把当前线路索引传给解析与预加载。改动涉及 `lib/player_screen.dart`、`lib/player_controls.dart`、`lib/player_menu.dart`、`lib/television_controls.dart`、`lib/player_interactions.dart`、`lib/core_bridge.dart`、`lib/playback_loader.dart`、`lib/playback_preloader.dart`、`lib/local_media_screen.dart` 与 `native/core` 的播放线路代码。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.2.0+86（未验证开发快照）**。1.0.0 起默认版显示名为“短剧视界”、`--all-sources` 全站源版为“全剧视界”，分发文件名前缀为 `duanjushijie` / `quanjushijie`；GitHub Release 只发布短剧视界版安装包，全剧视界版只在 Actions Artifact 下载；Android Actions 不再保留构建日志上传。上一轮（1.0.2+76）新增播放线路选择与线路复用：清晰度按钮右侧新增“线路 N”按钮，点击打开线路列表，可在播放中切换线路并保留当前位置与播放状态；选定线路后，同一剧集的后续集数（含自动连播、遥控上一集 / 下一集、滑动切集、选集菜单）默认复用该线路，不再从第一条线路重新尝试；切换下一集时默认不再弹出暂停按钮，只有单击画面、按空格暂停等原有操作才显示控制层，静默数秒自动隐藏的逻辑保留。线路列表来自站源返回的同一集多地址（按画质优先排序），原生核心新增 `selectRoute` 动作与 `nativePreferredRoute` 收敛 0 值与越界值，Dart 端切换线路时保留原会话再重开，切集时把当前线路索引传给解析与预加载。改动涉及 `lib/player_screen.dart`、`lib/player_controls.dart`、`lib/player_menu.dart`、`lib/television_controls.dart`、`lib/player_interactions.dart`、`lib/core_bridge.dart`、`lib/playback_loader.dart`、`lib/playback_preloader.dart`、`lib/local_media_screen.dart` 与 `native/core` 的播放线路代码。
 
-本轮（1.2.0+85）为「源显示列表」管理与播放器触摸手势，App 与本地 Web 服务器版同步落地：
+本轮（1.2.0+86）修复 Android 端播放报「tls: failed to verify certificate: x509: certificate signed by unknown authority」的问题，只改 Go 原生核心：
+
+1. 黄果浏览器指纹传输（`native/core/network_browser.go`）。黄果系站源的目录与播放请求不走标准 `http.Transport`，而是走 tls-client 的 Chrome 指纹传输；Android 端纯 Go 不加载系统信任库，此前该传输的 `TransportOptions.RootCAs` 留空，握手校验回落到空证书池，任何站源证书都会被判「未知签发机构」。现在与标准传输一致，显式挂上「系统信任库 + 打包 CA 全集」（`systemCertPoolWithBundle()`），其余平台行为不变、不降低校验强度。
+2. DoH 解析器（`native/core/network_dns.go`）。DoH 端点（dns.alidns.com / dns.google）此前的传输把 TLSClientConfig 清空回落系统信任库，Android 端同样报 unknown authority，导致 CDN 换 IP 兜底整体失效；现改为挂打包 CA 全集并要求 TLS 1.2+。
+3. 全链路核对：标准目录 / 媒体传输与 CDN pinned 传输（`app_runtime.go`，Clone 继承 RootCAs）、野果 API 客户端（`provider_yeguo_client.go`）此前已挂打包 CA，本轮复核无遗漏；局域网发现与互联（`app_lan*.go`）只与本机网段设备通信、设计上跳过校验，不涉及此错误。随包 `cacert.pem` 为 2026-09-25 版 Mozilla 121 根集合（含 Certum、ISRG、DigiCert、GlobalSign、Sectigo 等），作为信任锚充足。修复后需重新构建安装包装机（Go 核心以 FFI 静态进 apk / 原生库，旧安装包内嵌核心不会自动更新）。
+
+验证：`go build ./core ./server`、`go vet ./core` 通过；core 包测试做了改动前后基线对照，失败集合一致（Windows 本机既有的少量红果游标夹具用例失败与网络测试单独通过），确认零回归；真实 Android 设备播放验证待新包安装后确认。
+
+上一轮（1.2.0+85）为「源显示列表」管理与播放器触摸手势，App 与本地 Web 服务器版同步落地：
 
 1. 源显示列表（App：`lib/local_store.dart`、`lib/sources_screen.dart`、`lib/home_screen.dart`）。站源管理页顶部新增「源显示列表」入口卡片（位于「自定义源」上方，副标题实时显示可见 / 总数），进入后按站源分组逐个开关每个站源（含内置站源与自定义源）是否在首页显示，并提供「全部显示」一键恢复。隐藏集合按用户持久化（`hiddenSites`，随备份导出 / 恢复），与站源权限相互独立——隐藏只影响首页分组、目录与默认站源选择，站源管理中的更新、检测与已缓存内容不受影响，随时可重新开启。首页站源分组与目录过滤只消费可见站源；当前站源被隐藏时自动落到第一个可见站源；全部隐藏时首页显示「暂无显示中的站源」提示。
 2. 源显示列表（本地 Web 版：`native/server/visibility.go` 新增、`main.go`、`web/index.html`、`web/app.js`）。顶栏「自定义源」旁新增「源显示」入口页，列出全部可用站源（内置 / 自定义，带可见状态），checkbox 即时保存；隐藏集合持久化到数据目录 `source-visibility.json`（原子写入），`/api/sources` 为每个站源附带 `visible` 标记，下拉框只列可见站源，同时保留完整站源名称映射供收藏夹 / 播放记录标注来源；被隐藏的站源若正是当前选中源，切换后自动落到首个可见源。
@@ -51,8 +59,8 @@ iOS 发热排查：原配置 `enableHardwareAcceleration: !Platform.isIOS` 会�
 
 | 编译方式 | 显示名 | 分发包前缀 | 示例 |
 | --- | --- | --- | --- |
-| 默认 | 短剧视界 | `duanjushijie` | `duanjushijie-1.2.0+85-arm64-v8a.apk`、`duanjushijie.exe` |
-| `--all-sources` | 全剧视界 | `quanjushijie` | `quanjushijie-1.2.0+85-arm64-v8a.apk`、`quanjushijie.exe` |
+| 默认 | 短剧视界 | `duanjushijie` | `duanjushijie-1.2.0+86-arm64-v8a.apk`、`duanjushijie.exe` |
+| `--all-sources` | 全剧视界 | `quanjushijie` | `quanjushijie-1.2.0+86-arm64-v8a.apk`、`quanjushijie.exe` |
 
 两版保留原 Android / iOS 应用标识及数据目录；Android 使用同一签名可相互覆盖升级，不能作为两个独立正式应用并排安装。Windows 沿用原内部产品标识与数据目录。切换版本保留追剧、观看记录、用户权限和下载记录；短剧视界版隐藏其他站源内容，恢复全站源版后可继续使用。备份格式也保持兼容。
 
@@ -703,10 +711,10 @@ SR-1、SR-2 与 SR-4 已接入源码，小型动漫 CNN 也包含在本轮；SR-
 
 | 平台 | 包与状态 |
 | --- | --- |
-| Android 8.0+ 手机 | 源码已更新到 `1.2.0+85`（未验证）：站源管理新增「源显示列表」管理项，播放器支持进度条区域水平拖动快退 / 快进与左半屏竖拖临时调整显示亮度；保留播放线路按钮、线路复用、双击暂停 / 继续、切集不弹出暂停按钮和原有单击 / 长按 / 滑动手势；真实安装、播放交互、热量和帧耗仍待设备验收 |
-| Windows 10/11 x64 | 源码版本为 `1.2.0+85`，共用播放启动互斥修复与站源「源显示列表」；`1.0.3+77`（未验证）在 1.0.2+76 的线路按钮与线路复用基础上让左右键快进 / 快退不再显示跳转提示、跳转引起的缓冲也不再弹出控制层；便携版完整解压后运行 `duanjushijie.exe`，全站源版为 `quanjushijie.exe`，保留所有 DLL 和 `data`；安装 / 升级 / 卸载与桌面运行待验收，局域网原生发现依赖 Windows 10 1903+ |
-| Android TV | 与手机共用 `1.2.0+85` 源码并保持电视遥控布局，共用播放启动互斥修复；电视播放设置面板在有多条线路时显示“线路 N”按钮；待电视 / 盒子实机验收；0.2.12 选集 / 设置及 0.2.13 同步仍待集中验证 |
-| iOS 15.1+ | 源码已更新到 `1.2.0+85`（未验证），首页和观看历史在详情加载期间忽略重复播放点击，移动播放器支持双击画面暂停 / 继续播放（亮度手势为 Android 专属，iOS 保持上下滑切集）；仍需签名安装与真机播放验收；已加入工程、Go 核心链接、媒体依赖、文件管理、系统代理桥接、Bonjour / 局域网权限和构建脚本，尚无已签名 IPA |
+| Android 8.0+ 手机 | 源码已更新到 `1.2.0+86`（未验证）：站源管理新增「源显示列表」管理项，播放器支持进度条区域水平拖动快退 / 快进与左半屏竖拖临时调整显示亮度；保留播放线路按钮、线路复用、双击暂停 / 继续、切集不弹出暂停按钮和原有单击 / 长按 / 滑动手势；真实安装、播放交互、热量和帧耗仍待设备验收 |
+| Windows 10/11 x64 | 源码版本为 `1.2.0+86`，共用播放启动互斥修复与站源「源显示列表」；`1.0.3+77`（未验证）在 1.0.2+76 的线路按钮与线路复用基础上让左右键快进 / 快退不再显示跳转提示、跳转引起的缓冲也不再弹出控制层；便携版完整解压后运行 `duanjushijie.exe`，全站源版为 `quanjushijie.exe`，保留所有 DLL 和 `data`；安装 / 升级 / 卸载与桌面运行待验收，局域网原生发现依赖 Windows 10 1903+ |
+| Android TV | 与手机共用 `1.2.0+86` 源码并保持电视遥控布局，共用播放启动互斥修复；电视播放设置面板在有多条线路时显示“线路 N”按钮；待电视 / 盒子实机验收；0.2.12 选集 / 设置及 0.2.13 同步仍待集中验证 |
+| iOS 15.1+ | 源码已更新到 `1.2.0+86`（未验证），首页和观看历史在详情加载期间忽略重复播放点击，移动播放器支持双击画面暂停 / 继续播放（亮度手势为 Android 专属，iOS 保持上下滑切集）；仍需签名安装与真机播放验收；已加入工程、Go 核心链接、媒体依赖、文件管理、系统代理桥接、Bonjour / 局域网权限和构建脚本，尚无已签名 IPA |
 
 | 历史版本 0.2.15 | 安装包 | 大小 |
 | --- | --- | --- |

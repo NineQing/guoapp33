@@ -82,6 +82,11 @@ func (transport *huangguoBrowserTransport) createClient(proxy string) (browserHT
 		tlsclient.WithTransportOptions(&tlsclient.TransportOptions{
 			IdleConnTimeout: &idleTimeout, MaxIdleConns: 8, MaxIdleConnsPerHost: 4,
 			MaxResponseHeaderBytes: 1 << 20,
+			// Android 端纯 Go 不加载系统信任库，tls-client 的 RootCAs 为空时
+			// utls 回落系统池会报 unknown authority。显式挂上「系统信任库 +
+			// 打包 CA 全集」，与标准传输（app_runtime.go）保持一致的信任锚，
+			// 修复黄果站点目录与播放请求在 Android 上握手失败的问题。
+			RootCAs: systemCertPoolWithBundle(),
 		}),
 	}
 	if transport.insecure {

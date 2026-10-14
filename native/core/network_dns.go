@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,7 +31,10 @@ type dnsResolver struct {
 
 func newDNSResolver(transport *http.Transport) *dnsResolver {
 	lookupTransport := transport.Clone()
-	lookupTransport.TLSClientConfig = nil
+	// DoH 端点（dns.alidns.com / dns.google）同样是 HTTPS。此前直接置 nil
+	// 回落到系统信任库，Android 端纯 Go 拿不到系统池会报 unknown authority，
+	// 导致 CDN 换 IP 兜底失效。改为显式挂打包 CA 全集，其余平台行为不变。
+	lookupTransport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: systemCertPoolWithBundle()}
 	return &dnsResolver{
 		client: &http.Client{Transport: lookupTransport, Timeout: 4 * time.Second},
 		cache:  map[string]dnsCacheEntry{}, inFlight: map[string]chan struct{}{},
