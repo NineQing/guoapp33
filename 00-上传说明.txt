@@ -1,6 +1,6 @@
 本次需提交的变更清单（对比基线：GitHub 当前 HEAD，对应本机 20261006guoapp3-main.zip 快照）
 ====================================================================
-【第七节为 2026-10-11 增补，第九节为 2026-10-14 源显示列表与播放器手势（1.1.1+83 / 1.2.0+84），第十节为 +85 保存失败修复，第十一节为 CI MinGW 加固，第十二节为 2026-10-14 最新追加（1.2.0+86 Android TLS 证书校验修复），若你只读一节，读第十二节。一至六节为 1.1.0+80 首批清单，仍然有效。第四节中「index.html 无改动」已被第九节推翻：本批 index.html 需覆盖。】
+【第七节为 2026-10-11 最新增补，若你只读一节，读第七节。一至六节为 1.1.0+80 首批清单，仍然有效。】
 
 本包为「覆盖/新增」叠加包：把包内文件按原路径放进仓库即可，包里没有的文件一律不要动。
 本批相对 HEAD 无任何删除文件，无需 git rm。
@@ -67,7 +67,6 @@
     .github/workflows/build.yml（本地与 HEAD 完全一致，无需处理）
     pubspec.yaml / pubspec.lock / android / ios / windows / macos / scripts（本批无改动，勿动）
     native/server/web/index.html、app.css、hls.min.js（无改动）
-      ↑ 注：index.html 在第九节（1.2.0+84）已重新改动并需覆盖；app.css、hls.min.js 仍无改动。
     dist/、build/ 为本地空构建目录，忽略。
 
 五、上传方式（二选一）
@@ -153,152 +152,3 @@
     验证：node --check native/server/web/app.js 通过（本机无 Flutter/Dart 工具链，
     Dart 侧由 CI 的 dart format / dart analyze / flutter test 验证）；Dart 文件括号配平自检通过，
     现有测试未引用该弹窗的 key，无用例受影响。
-
-九、2026-10-14 追加：1.1.1+83 播放器手势 + 1.2.0+84 源显示列表（当前源码 1.2.0+84）
-    ----------------------------------------------------------------
-    本轮两批改动合并进本包，共 13 个文件（覆盖 12 + 新增 1），全部为本地最新版，按原路径覆盖/放入即可：
-
-    新增文件（1 个）：
-      native/server/visibility.go        ★ 源显示列表服务端：隐藏集合持久化到数据目录
-                                          source-visibility.json（原子写入）；
-                                          /api/source-visibility GET 列全部可用站源+可见状态，
-                                          POST {id,visible} 切换。
-
-    覆盖文件（12 个）：
-      lib/local_store.dart               ★ 每用户 hiddenSites 持久化 + visibleSources +
-                                          setSiteVisible；source getter 在可见源中回落；
-                                          备份导出/恢复/校验支持 hiddenSites。
-      lib/sources_screen.dart            ★ 站源管理页顶部新增「源显示列表」入口卡片；
-                                          新增 SourceVisibilityScreen（分组开关+全部显示）。
-      lib/home_screen.dart               ★ 首页站源分组/目录过滤改用可见站源；
-                                          当前源被隐藏自动落到首个可见源；空态区分提示。
-      lib/player_interactions.dart       ★ 1.1.1：手势状态机分层——进度条区域水平拖动
-                                          快退/快进；左半屏慢速竖拖临时亮度；
-                                          快速竖扫仍切集（onSeek/onBrightness/currentBrightness）。
-      lib/player_screen.dart             ★ 1.1.1：Android 窗口级亮度 MethodChannel 接入
-                                          （apply/reset/readSystemBrightness，退出播放恢复）；
-                                          非 Android 不启用亮度手势。
-      android/app/src/main/kotlin/com/duanju/duanju_app/MainActivity.kt
-                                         ★ 1.1.1：duanju/device 通道三方法，
-                                          window.attributes.screenBrightness（免系统权限），
-                                          SCREEN_BRIGHTNESS_MODE_AUTOMATIC 常量修复。
-      test/player_interactions_test.dart ★ 1.1.1：拖动 seek 与亮度手势两个新单测；
-                                          移除 Pointer 事件不存在的 localPosition 参数。
-      native/server/main.go              ★ 1.2.0：/api/sources 每源附 visible 标记；
-                                          注册 /api/source-visibility；启动时
-                                          setVisibilityDirectory。
-      native/server/web/index.html       ★ 1.2.0：顶栏「自定义源」旁新增「源显示」入口。
-      native/server/web/app.js           ★ 1.2.0：源显示管理页（checkbox 即时保存）；
-                                          loadSources 下拉只列可见源、保留全量名称映射。
-      pubspec.yaml                       ★ 版本 1.1.1+83 → 1.2.0+84。
-      README.md                          ★ 1.2.0/1.1.1 两轮特性说明与平台状态更新。
-
-    注意：本包 lib/player_screen.dart 与 native/server/web/app.js 现在同时包含
-    1.1.0+80 去广告/规则改动与本轮改动（本地最新即全部叠加），直接覆盖即可。
-    本批无删除文件；其余文件勿动。
-
-    验证结论（本机 2026-10-14，在 guoapp3-main 源仓库上）：
-      go build ./server、go vet ./server 通过；node --check web/app.js 通过；
-      包内 12 个覆盖文件与源仓库逐字节一致。
-      本机无 Flutter/Dart 工具链，Dart 侧（含 test/player_interactions_test.dart）
-      由 CI 的 dart format / dart analyze / flutter test 验证。
-
-    上传方式同第五节：按原路径覆盖/放入本包文件，
-    git add -A && git commit -m "1.2.0+84: 源显示列表管理与播放器手势（进度条拖动、左半屏亮度）" && git push
-
-十、2026-10-14 追加修复：源显示列表开关报「未能保存」（1.2.0+85）
-    ----------------------------------------------------------------
-    现象：Android / Windows / macOS / iOS 四端在「源显示列表」点开关站源时，
-    均提示「未能保存，请检查存储空间和权限后重试」。
-    根因：LocalSnapshot 对持久化键有白名单校验（libraryKeys / globalKeys /
-    profile.<id>.<key> 正则），新增的 hiddenSites 键没有登记，commit 抛
-    「无效的本地配置字段」→ saveUserChange 统一弹出保存失败提示。四端共用
-    这段 Dart 逻辑，所以全平台复现；与存储空间和权限无关。
-    修复（本包新增/覆盖）：
-      lib/local_snapshot.dart          ★ libraryKeys 加入 'hiddenSites'；
-                                         profile 键正则同步加入 hiddenSites。
-      pubspec.yaml                     ★ 1.2.0+84 → 1.2.0+85（同版本号覆盖修复）。
-      README.md                        ★ 版本号引用同步为 1.2.0+85。
-    其余文件不变；第九节的 lib/local_store.dart 等无需重传改动。
-    验证：hiddenSites 已同时出现在白名单集合与正则中；LocalStore 全部 13 个
-    _key(...) 键均被 owns() 覆盖；deleteProfile 依 libraryKeys 清理，随白名单
-    自动包含新键。本机无 Flutter/Dart 工具链，由 CI 验证。
-
-十一、2026-10-14 追加修复：GitHub Actions Windows 构建 MinGW 安装失败
-    ----------------------------------------------------------------
-    现象：Actions 的 windows job 在 Install MinGW 步骤报错——
-      choco install mingw --version=13.2.0 返回 HTTP 406 (Not Acceptable)，
-      随后提示 "mingw not installed. The package was not found"，
-      Process completed with exit code 1，Windows 安装包无法产出。
-    根因：Chocolatey 社区源的 mingw 包已升级到 16.1.0，锁定使用的
-      13.2.0 版本被下架，指定旧版本安装时源直接拒绝（406），且工作流
-      没有任何兜底安装通道，一步失败整个 job 失败。
-    修复（本包新增/覆盖）：
-      .github/workflows/build.yml      ★ 重写 Install MinGW 步骤为双通道：
-        1) 主通道仍为 choco install mingw --version=13.2.0（源恢复时即用）；
-        2) 兜底通道：若 choco 后未检测到
-           C:\ProgramData\mingw64\mingw64\bin\x86_64-w64-mingw32-gcc.exe，
-           则从 winlibs GitHub Release 直接下载
-           GCC 13.2.0（posix-seh-ucrt，与原版本 ABI 一致）的 zip，
-           用 runner 自带 7-Zip 解压到 C:\mingw-w64（Expand-Archive 兜底），
-           解压后动态探测 gcc.exe 实际所在前缀目录；
-        3) 两通道均失败时 throw 明确错误信息；
-        4) 检测到前缀后把 <prefix>\bin 追加进 $env:GITHUB_PATH，
-           并保留原逻辑：删除 x86_64-w64-mingw32\lib 下的
-           libpthread.dll.a / libwinpthread.dll.a，强制 Go 静态链接。
-        全程 $ErrorActionPreference='Continue'，避免 choco 非零退出码
-        直接中断后续兜底检测。
-    验证：winlibs 直链经 cfkua / gh-proxy.com / ghfast.top 三镜像 HEAD 均
-      返回 206（文件存在可断点续传）；build.yml 经 pyyaml 解析通过
-      （windows job steps=10）；Install 步骤内嵌脚本经 PowerShell
-      Parser 语法检查 0 error。
-    注意：本节仅改 CI 工作流，不涉及应用源码；与第十节的
-      lib/local_snapshot.dart / pubspec.yaml / README.md 互不影响，
-      第十节文件仍需按上文覆盖上传。
-    上传方式：把本包 .github\workflows\build.yml 覆盖仓库同名文件，
-      git add -A && git commit -m "ci: Windows MinGW 安装加固（choco 主 + winlibs 兜底）" && git push
-      推送后观察 Actions windows job 是否走兜底通道成功产出安装包。
-
-十二、2026-10-14 追加：修复 Android 端 TLS 证书校验失败（1.2.0+86）
-    ----------------------------------------------------------------
-    现象：编译安装的 Android 端播放时报
-      tls: failed to verify certificate: x509: certificate signed by unknown authority。
-    根因：Android 端 Go 核心经 FFI 嵌入且不加载系统信任库（x509.SystemCertPool()
-      返回空池），HTTPS 信任锚全靠编译进二进制的 cacert.pem。标准传输
-      （app_runtime.go，+85 前已修）与野果客户端已挂打包 CA，但两条路径漏网：
-        1) 黄果浏览器指纹传输（network_browser.go）——黄果系站源的目录与播放
-           请求走 tls-client Chrome 指纹，其 TransportOptions.RootCAs 留空，
-           Android 握手校验必报 unknown authority；
-        2) DoH 解析器（network_dns.go）——传输被清空 TLSClientConfig 回落
-           系统信任库，Android 同样失败，CDN 换 IP 兜底整体失效。
-    修复（本包覆盖）：
-      native/core/network_browser.go   ★ TransportOptions 增加
-                                         RootCAs: systemCertPoolWithBundle()。
-      native/core/network_dns.go       ★ DoH 传输挂打包 CA 全集 + TLS1.2 下限
-                                         （补 crypto/tls 导入）。
-      native/core/ca_bundle.go         ★ go:embed 打包 CA 池辅助。若仓库尚无
-                                         此文件则为新增（app_runtime.go 引用了
-                                         systemCertPoolWithBundle，缺它编译失败）；
-                                         已有则覆盖，内容一致。
-      native/core/cacert.pem           ★ 2026-09-25 版 Mozilla 121 根集合
-                                         （go:embed 对象，必须与 ca_bundle.go 同批）。
-      native/core/provider_yeguo_client.go ★ 野果 fallback 传输挂打包 CA。
-      native/core/app_runtime.go       ★ 注意：本包此前存放的是旧版（仅
-                                         MinVersion、无 RootCAs）——之前一轮
-                                         「标准传输挂打包 CA」的修复漏同步进
-                                         本包。本次已用最新源码覆盖（含
-                                         systemCertPoolWithBundle 行），务必
-                                         随本批上传，否则 Android 端媒体请求
-                                         （m3u8 分片）仍会报 unknown authority。
-      pubspec.yaml                     ★ 1.2.0+85 → 1.2.0+86。
-      README.md                        ★ 本轮条目与版本号同步。
-    说明：Android TLS 修复完整生效需要以上 6 个 Go 文件 + cacert.pem 全部就位
-      （标准传输 app_runtime / CDN pinned 继承 Clone / 黄果指纹 browser / DoH
-      dns / 野果 yeguo / CA 池 ca_bundle+cacert）。局域网模块（app_lan*.go）
-      只与本机网段设备通信、设计上跳过校验，勿改动。
-    验证（本机 2026-10-14）：go build ./core ./server、go vet ./core 通过；
-      core 包测试做改动前后基线对照，失败集合完全一致（Windows 本机既有的
-      少量红果游标夹具用例，与本次改动无关；定向网络用例全部通过），零回归。
-      Android 真机播放需重新打包安装验证（旧安装包内嵌旧核心，不会自动修复）。
-    上传方式：按原路径覆盖本包文件，
-      git add -A && git commit -m "1.2.0+86: 修复 Android 端 TLS 证书校验失败（黄果指纹传输与 DoH 挂打包 CA）" && git push
