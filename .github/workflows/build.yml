@@ -132,9 +132,50 @@ jobs:
       - name: Install MinGW
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Continue'
+          $prefix = $null
+          # 主线：choco 锁定 13.2.0。社区 feed 已升级 mingw 到 16.x，
+          # 对下架的 13.2.0 会返回 406 / package not found，失败不中断，走兜底。
           choco install mingw --version=13.2.0 -y --no-progress
-          Add-Content $env:GITHUB_PATH "C:\ProgramData\mingw64\mingw64\bin"
-          $lib = "C:\ProgramData\mingw64\mingw64\x86_64-w64-mingw32\lib"
+          if (Test-Path 'C:\ProgramData\mingw64\mingw64\bin\x86_64-w64-mingw32-gcc.exe') {
+            $prefix = 'C:\ProgramData\mingw64\mingw64'
+          } else {
+            # 兜底：从 winlibs 官方 GitHub Release 直取同版本 GCC 13.2.0
+            # （POSIX 线程 / SEH / UCRT，与 choco mingw 13.2.0 同源配置），
+            # Actions Windows runner 到 GitHub 直连稳定。
+            $url = 'https://github.com/brechtsanders/winlibs_mingw/releases/download/13.2.0posix-17.0.6-11.0.1-ucrt-r5/winlibs-x86_64-posix-seh-gcc-13.2.0-mingw-w64ucrt-11.0.1-r5.zip'
+            $zip = Join-Path $env:RUNNER_TEMP 'winlibs-mingw.zip'
+            $dst = 'C:\mingw-w64'
+            for ($i = 1; $i -le 3; $i++) {
+              try {
+                $ProgressPreference = 'SilentlyContinue'
+                Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 600
+                break
+              } catch {
+                Write-Host "winlibs 下载第 $i 次失败：$($_.Exception.Message)"
+                if ($i -eq 3) { throw }
+                Start-Sleep -Seconds 10
+              }
+            }
+            New-Item -ItemType Directory -Force -Path $dst | Out-Null
+            $sevenZip = Join-Path ${env:ProgramFiles} '7-Zip\7z.exe'
+            if (Test-Path $sevenZip) {
+              & $sevenZip x $zip "-o$dst" -y | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw '7z 解压 mingw 失败' }
+            } else {
+              Expand-Archive -LiteralPath $zip -DestinationPath $dst -Force
+            }
+            Remove-Item $zip -ErrorAction SilentlyContinue
+            if (Test-Path (Join-Path $dst 'mingw64\bin\x86_64-w64-mingw32-gcc.exe')) {
+              $prefix = Join-Path $dst 'mingw64'
+            }
+          }
+          if (-not $prefix) { throw '未找到可用的 MinGW-w64 13.2.0（choco 与 winlibs 兜底均失败）' }
+          $bin = Join-Path $prefix 'bin'
+          Add-Content $env:GITHUB_PATH $bin
+          & (Join-Path $bin 'x86_64-w64-mingw32-gcc.exe') --version
+          # 移除 winpthread 导入库，强制 cgo 静态链接，避免 DLL 依赖（原有处理）。
+          $lib = Join-Path $prefix 'x86_64-w64-mingw32\lib'
           if (Test-Path $lib) {
             Remove-Item (Join-Path $lib 'libpthread.dll.a') -ErrorAction SilentlyContinue
             Remove-Item (Join-Path $lib 'libwinpthread.dll.a') -ErrorAction SilentlyContinue
