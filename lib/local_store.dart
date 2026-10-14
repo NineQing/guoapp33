@@ -138,6 +138,44 @@ class LocalStore extends ChangeNotifier {
         .map((site) => site.asSourceSite);
     return [...builtIn, ...custom];
   }
+
+  /// 当前用户被隐藏、不首页显示的站源 id 集合（含内置与自定义站源）。
+  Set<String> get hiddenSites {
+    if (locked) return const {};
+    try {
+      return (jsonDecode(_string(_key('hiddenSites')) ?? '[]') as List)
+          .whereType<String>()
+          .toSet();
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  bool siteVisible(String source) => !hiddenSites.contains(source);
+
+  /// 首页与各站源分组消费的可见站源列表。
+  List<SourceSite> get visibleSources {
+    final hidden = hiddenSites;
+    return sources.where((site) => !hidden.contains(site.id)).toList();
+  }
+
+  Future<void> setSiteVisible(String source, bool visible) {
+    final epoch = _epoch;
+    return _queue(() async {
+      if (locked || epoch != _epoch) return;
+      if (!SourceSite.isKnown(source)) {
+        throw StateError('未知站源');
+      }
+      final next = Set<String>.of(hiddenSites);
+      if (visible) {
+        next.remove(source);
+      } else {
+        next.add(source);
+      }
+      await _commit({_key('hiddenSites'): jsonEncode(next.toList())});
+      _notify();
+    });
+  }
   List<CustomSourceSite> get customSources => List.unmodifiable(_customSources);
 
   void _loadCustomSources() {
@@ -310,10 +348,12 @@ class LocalStore extends ChangeNotifier {
   bool get exportPosters => !locked && (_bool('exportPosters') ?? false);
   String get source {
     if (locked) return '';
+    final visible = visibleSources;
     final value = _string(_key('source')) ?? '';
-    return sources.any((site) => site.id == value)
+    // 首页默认站源只在可见站源中选择；站源被隐藏后自动落到下一个可见源。
+    return visible.any((site) => site.id == value)
         ? value
-        : sources.firstOrNull?.id ?? '';
+        : visible.firstOrNull?.id ?? sources.firstOrNull?.id ?? '';
   }
 
   DownloadPreferences get downloadPreferences {
@@ -944,6 +984,9 @@ class LocalStore extends ChangeNotifier {
               _string(_key('mediaHistory', profile.id)) ?? '{}',
             ),
             'source': _string(_key('source', profile.id)) ?? '',
+            'hiddenSites': jsonDecode(
+              _string(_key('hiddenSites', profile.id)) ?? '[]',
+            ),
             'hideVip': _bool(_key('hideVip', profile.id)) ?? true,
             'playback': jsonDecode(
               _string(_key('playback', profile.id)) ?? '{}',
@@ -1020,6 +1063,10 @@ class LocalStore extends ChangeNotifier {
       if (library['hideVip'] is! bool || library['source'] is! String) {
         throw const FormatException('备份设置无效');
       }
+      if (library.containsKey('hiddenSites') &&
+          library['hiddenSites'] is! List) {
+        throw const FormatException('备份站源显示设置无效');
+      }
       PlaybackPreferences.fromJson(
         Map<String, dynamic>.from(library['playback'] as Map? ?? {}),
       );
@@ -1079,6 +1126,9 @@ class LocalStore extends ChangeNotifier {
           library['mediaHistory'] ?? {},
         ),
         _key('source', profile.id): library['source'] as String,
+        _key('hiddenSites', profile.id): jsonEncode(
+          (library['hiddenSites'] as List? ?? []).whereType<String>().toList(),
+        ),
         _key('hideVip', profile.id): library['hideVip'] as bool,
         _key('playback', profile.id): jsonEncode(library['playback'] ?? {}),
         _key('downloadPreferences', profile.id): jsonEncode(

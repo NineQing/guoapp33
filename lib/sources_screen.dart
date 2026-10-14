@@ -9,6 +9,7 @@ import 'local_store.dart';
 import 'models.dart';
 import 'remote_widgets.dart';
 import 'source_status.dart';
+import 'widgets.dart';
 
 String sourceTimestamp(DateTime? value) {
   if (value == null) return '尚无记录';
@@ -186,6 +187,28 @@ class _SourcesScreenState extends State<SourcesScreen> {
               child: ListView(
                 padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
                 children: [
+                  Card(
+                    key: const ValueKey('source-visibility-entry'),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    clipBehavior: Clip.antiAlias,
+                    child: ListTile(
+                      leading: const Icon(Icons.visibility_outlined),
+                      title: const Text('源显示列表'),
+                      subtitle: Text(
+                        '控制在首页显示的站源（含内置站源）· 当前 '
+                        '${widget.store.visibleSources.length}/${widget.store.sources.length} 个可见',
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => Navigator.push<void>(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => SourceVisibilityScreen(
+                            store: widget.store,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                   Card(
                     key: const ValueKey('custom-sources-entry'),
                     margin: const EdgeInsets.only(bottom: 16),
@@ -496,6 +519,114 @@ class _SourcesScreenState extends State<SourcesScreen> {
       ),
     );
   }
+}
+
+/// 源显示列表：开关每个站源（含内置与自定义）在首页的显示。
+/// 与站源权限无关——隐藏只是不在首页出现，站源管理里的更新/检测不受影响。
+class SourceVisibilityScreen extends StatefulWidget {
+  const SourceVisibilityScreen({super.key, required this.store});
+
+  final LocalStore store;
+
+  @override
+  State<SourceVisibilityScreen> createState() => _SourceVisibilityScreenState();
+}
+
+class _SourceVisibilityScreenState extends State<SourceVisibilityScreen> {
+  final Set<String> _pending = {};
+
+  Future<void> _toggle(SourceSite source, bool visible) async {
+    if (_pending.contains(source.id)) return;
+    setState(() => _pending.add(source.id));
+    await saveUserChange(
+      context,
+      () => widget.store.setSiteVisible(source.id, visible),
+    );
+    if (mounted) setState(() => _pending.remove(source.id));
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: widget.store,
+    builder: (context, _) {
+      final sources = widget.store.sources;
+      final hidden = widget.store.hiddenSites;
+      return Scaffold(
+        appBar: AppBar(title: const Text('源显示列表')),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    '关闭的站源不会出现在首页站源分组与目录中；更新、检测与已缓存内容不受影响，随时可以重新开启。',
+                  ),
+                ),
+                if (sources.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('当前用户没有可用站源'),
+                  ),
+                for (final group in SourceGroup.fromSources(sources))
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      children: [
+                        if (group.sources.length > 1)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    group.name,
+                                    style: Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        for (final source in group.sources)
+                          SwitchListTile(
+                            secondary: const Icon(Icons.dns_outlined),
+                            title: Text(
+                              group.sources.length > 1
+                                  ? source.entryName
+                                  : source.name,
+                            ),
+                            subtitle: Text(source.description),
+                            value: !hidden.contains(source.id),
+                            onChanged: _pending.contains(source.id)
+                                ? null
+                                : (value) => _toggle(source, value),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        floatingActionButton: sources.isEmpty
+            ? null
+            : FloatingActionButton.extended(
+                key: const ValueKey('visibility-show-all'),
+                onPressed: () async {
+                  for (final source in sources) {
+                    if (hidden.contains(source.id)) {
+                      await _toggle(source, true);
+                    }
+                  }
+                },
+                icon: const Icon(Icons.visibility_rounded),
+                label: const Text('全部显示'),
+              ),
+      );
+    },
+  );
 }
 
 class SourceDiagnosticsButton extends StatelessWidget {

@@ -78,9 +78,11 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _openingPlayback = false;
 
   List<SourceGroup> get _sourceGroups {
-    final groups = SourceGroup.fromSources(widget.store.sources);
+    // 首页只显示「源显示列表」中开启的站源，被隐藏的站源不出现在分组里。
+    final visible = widget.store.visibleSources;
+    final groups = SourceGroup.fromSources(visible);
     return [
-      if (groups.length > 1) SourceGroup('all', '全部站源', widget.store.sources),
+      if (groups.length > 1) SourceGroup('all', '全部站源', visible),
       ...groups,
     ];
   }
@@ -89,7 +91,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _sourceGroups
           .where((group) => group.id == (_allSources ? 'all' : _source.groupId))
           .firstOrNull ??
-      SourceGroup(_source.groupId, _source.groupName, [_source]);
+      (() {
+        final visible = widget.store.visibleSources;
+        final site = visible.any((s) => s.id == _source.id)
+            ? _source
+            : (visible.firstOrNull ?? _source);
+        return SourceGroup(site.groupId, site.groupName, [site]);
+      })();
   bool get _onlineSearch => _group.sources.any((source) => source.onlineSearch);
   bool get _searchSuggestions =>
       _group.sources.any((source) => source.searchSuggestions);
@@ -324,6 +332,23 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (!mounted) return;
+    // 站源显示列表可能变了：当前源被隐藏时落到第一个可见站源。
+    final next = SourceSite.byId(widget.store.source);
+    if (next.id != _source.id) {
+      setState(() {
+        _source = next;
+        _allSources = false;
+        _items = [];
+        _hasMore = true;
+        _error = null;
+      });
+      unawaited(
+        saveUserChange(
+          context,
+          () => widget.store.setCatalogSource(next.id, allSources: false),
+        ),
+      );
+    }
     await _loadCategories();
     if (mounted && (!_onlineSearch || _submittedQuery.isEmpty)) {
       await _load(useCache: true);
@@ -411,7 +436,7 @@ class _HomeScreenState extends State<HomeScreen> {
     )..addListener(_updateChanged);
     _updater.startWatching();
     widget.repository.catalogUpdates.addListener(_metadataChanged);
-    if (widget.store.sources.isNotEmpty) {
+    if (widget.store.visibleSources.isNotEmpty) {
       _load(useCache: true);
       _loadCategories();
     } else {
@@ -751,9 +776,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Drama> get _visible {
     final query = _search.text.trim().toLowerCase();
+    final hidden = widget.store.hiddenSites;
     return sortCatalog(
       _items.where((drama) {
         if (!widget.store.allowsSource(drama.source)) return false;
+        if (hidden.contains(drama.source)) return false;
         if (_category.startsWith('local:') &&
             categoryName(drama.category) != _category.substring(6)) {
           return false;
@@ -944,7 +971,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   key: const ValueKey('open-rankings'),
                   icon: LucideIcons.trophy,
                   tooltip: '榜单',
-                  onPressed: widget.store.sources.isEmpty
+                  onPressed: widget.store.visibleSources.isEmpty
                       ? null
                       : _openRankings,
                 ),
@@ -967,7 +994,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 PullDownEntry(
                   label: '更新剧库',
                   icon: LucideIcons.rotateCw,
-                  onPressed: widget.store.sources.isEmpty || updating
+                  onPressed: widget.store.visibleSources.isEmpty || updating
                       ? null
                       : () => _moreAction('update'),
                 ),
@@ -1121,7 +1148,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         IconButton(
                           key: const ValueKey('open-rankings'),
                           tooltip: '榜单',
-                          onPressed: widget.store.sources.isEmpty
+                          onPressed: widget.store.visibleSources.isEmpty
                               ? null
                               : _openRankings,
                           icon: const Icon(Icons.leaderboard_outlined),
@@ -1154,7 +1181,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           key: const ValueKey('catalog-refresh'),
                           loading: _catalogBusy,
                           tooltip: '更新剧库',
-                          onPressed: widget.store.sources.isEmpty
+                          onPressed: widget.store.visibleSources.isEmpty
                               ? null
                               : _refreshCatalog,
                         ),
@@ -1168,7 +1195,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             PopupMenuItem(
                               value: 'update',
                               enabled:
-                                  widget.store.sources.isNotEmpty &&
+                                  widget.store.visibleSources.isNotEmpty &&
                                   !_group.sources.any(
                                     (source) => _updater.busy(source.id),
                                   ),
@@ -1298,10 +1325,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
                 Expanded(
                   child: _tab == 0
-                      ? widget.store.sources.isEmpty
-                            ? const StatusPanel(
-                                title: '暂无可用站源',
-                                message: '请联系管理员为当前用户开放站源。',
+                      ? widget.store.visibleSources.isEmpty
+                            ? StatusPanel(
+                                title: '暂无显示中的站源',
+                                message: widget.store.sources.isEmpty
+                                    ? '请联系管理员为当前用户开放站源。'
+                                    : '所有站源已在「源显示列表」中关闭，请到站源管理中重新开启。',
                               )
                             : _catalog(selectionInBody: desktop || television)
                       : _tab == 3
@@ -1538,7 +1567,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: '没有找到匹配的短剧',
                       message: _hideVip
                           ? '可以换个搜索词，或显示 VIP 内容。'
-                          : widget.store.sources.length > 1
+                          : widget.store.visibleSources.length > 1
                           ? '可以换个搜索词或切换站源。'
                           : '可以换个搜索词，或刷新后重试。',
                       onRetry:
