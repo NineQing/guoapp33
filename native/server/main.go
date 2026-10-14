@@ -546,10 +546,14 @@ func handleCover(writer http.ResponseWriter, request *http.Request) {
 }
 
 func handleSources(writer http.ResponseWriter, request *http.Request) {
-	items := []map[string]string{}
+	// 返回全部可用站源并附带 visible 标记：首页下拉框只显示开启的站源，
+	// 但前端仍保留完整站源名称映射，供收藏夹/播放记录标注隐藏站源的条目。
+	items := []map[string]any{}
 	for _, source := range sourceNames {
 		if sourceAvailable(source.ID) {
-			items = append(items, map[string]string{"id": source.ID, "name": source.Name})
+			items = append(items, map[string]any{
+				"id": source.ID, "name": source.Name, "visible": !isSourceHidden(source.ID),
+			})
 		}
 	}
 	// 并入用户自定义的 maccms 站源，使其出现在站源下拉框。
@@ -563,7 +567,9 @@ func handleSources(writer http.ResponseWriter, request *http.Request) {
 	if json.Unmarshal([]byte(core.NativeRequest(`{"action":"customSources"}`)), &customReply) == nil && customReply.OK {
 		for _, custom := range customReply.Data.Items {
 			if sourceAvailable(custom["id"]) {
-				items = append(items, map[string]string{"id": custom["id"], "name": custom["name"]})
+				items = append(items, map[string]any{
+					"id": custom["id"], "name": custom["name"], "visible": !isSourceHidden(custom["id"]),
+				})
 			}
 		}
 	}
@@ -917,6 +923,7 @@ func main() {
 	}
 	// 播放记录与收藏跟着数据目录走，删掉数据目录即可一并清空。
 	setLibraryDirectory(directory)
+	setVisibilityDirectory(directory)
 	encoded, err := json.Marshal(map[string]any{"action": "initialize", "directory": directory})
 	if err != nil {
 		log.Fatalf("初始化请求编码失败：%v", err)
@@ -944,6 +951,7 @@ func main() {
 	mux.HandleFunc("/api/live/", handleLive)
 	mux.HandleFunc("/api/cover", handleCover)
 	mux.HandleFunc("/api/sources", handleSources)
+	mux.HandleFunc("/api/source-visibility", handleSourceVisibility)
 	mux.HandleFunc("/api/custom-sources", handleCustomSources)
 	mux.HandleFunc("/api/custom-sources/", handleCustomSources)
 	mux.HandleFunc("/api/library", handleLibrary)

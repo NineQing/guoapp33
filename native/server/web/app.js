@@ -442,20 +442,24 @@ function loadSources() {
     })
     .then(function (data) {
       var items = (data && data.items) || [];
-      if (!items.length) {
-        items = [{ id: 'hongguo', name: '红果' }];
-      }
       state.sourceNames = {};
+      // 保留全部站源名称映射（含隐藏的），供收藏夹/播放记录标注来源。
       items.forEach(function (item) {
         state.sourceNames[item.id] = item.name;
       });
-      sourceSelect.innerHTML = items
-        .map(function (item) {
-          return '<option value="' + escapeHTML(item.id) + '">' + escapeHTML(item.name) + '</option>';
-        })
-        .join('');
-      if (!items.some(function (item) { return item.id === state.source; })) {
-        state.source = items[0].id;
+      // 下拉框只列「源显示列表」中开启的站源。
+      var visibleItems = items.filter(function (item) {
+        return item.visible !== false;
+      });
+      sourceSelect.innerHTML = visibleItems.length
+        ? visibleItems
+            .map(function (item) {
+              return '<option value="' + escapeHTML(item.id) + '">' + escapeHTML(item.name) + '</option>';
+            })
+            .join('')
+        : '<option value="">无显示中的站源</option>';
+      if (visibleItems.length && !visibleItems.some(function (item) { return item.id === state.source; })) {
+        state.source = visibleItems[0].id;
       }
       sourceSelect.value = state.source;
     })
@@ -1609,6 +1613,87 @@ function customSourceRemove(id) {
     });
 }
 
+// —— 源显示列表管理 ——
+
+function visibilityList() {
+  return fetch('/api/source-visibility')
+    .then(function (response) {
+      return response.json();
+    })
+    .then(function (data) {
+      return (data && data.items) || [];
+    });
+}
+
+function visibilitySet(id, visible) {
+  return fetch('/api/source-visibility', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: id, visible: !!visible }),
+  }).then(function (response) {
+    return response.json().then(function (data) {
+      if (!data || data.ok !== true) {
+        throw new Error(data && data.error ? data.error : '保存源显示设置失败');
+      }
+      return data;
+    });
+  });
+}
+
+function renderSourceVisibility() {
+  view.innerHTML = '<div class="loading">正在加载站源列表…</div>';
+  return visibilityList().then(function (items) {
+    var visibleCount = items.filter(function (item) { return item.visible; }).length;
+    var rows = items.map(function (item) {
+      return (
+        '<div class="vis-row" style="display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:6px 0">' +
+        '<div style="min-width:0">' +
+        '<div style="font-weight:600">' + escapeHTML(item.name || '') +
+        (item.builtin ? '（内置）' : '（自定义）') + '</div>' +
+        '<div style="font-size:12px;opacity:0.6">' + escapeHTML(item.id) + '</div>' +
+        '</div>' +
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:none">' +
+        '<span style="font-size:13px;opacity:0.8">' + (item.visible ? '首页显示' : '已隐藏') + '</span>' +
+        '<input type="checkbox" class="vis-toggle" data-id="' + escapeHTML(item.id) + '"' +
+        (item.visible ? ' checked' : '') + ' />' +
+        '</label>' +
+        '</div>'
+      );
+    }).join('');
+    if (!rows) {
+      rows = '<div class="empty">当前没有可用站源。</div>';
+    }
+    view.innerHTML =
+      '<div class="lib">' +
+      '<div class="lib-tabs">' +
+      '<span class="lib-tab active">源显示列表（可见 ' + visibleCount + ' / 共 ' + items.length + '）</span>' +
+      '</div>' +
+      '<div style="font-size:12px;opacity:0.7;padding:4px 2px 8px">' +
+      '关闭的站源不会出现在顶部站源下拉框与首页目录中；自定义源记录、已缓存内容与播放都不受影响，随时可以重新开启。</div>' +
+      rows +
+      '</div>';
+    bindSourceVisibilityView();
+  });
+}
+
+function bindSourceVisibilityView() {
+  var toggles = view.querySelectorAll('.vis-toggle');
+  Array.prototype.forEach.call(toggles, function (input) {
+    input.addEventListener('change', function () {
+      input.disabled = true;
+      visibilitySet(input.getAttribute('data-id'), input.checked).then(function () {
+        // 下拉框同步刷新：当前源被隐藏时 loadSources 会自动落到首个可见源。
+        return loadSources();
+      }).then(function () {
+        renderSourceVisibility();
+      }).catch(function (error) {
+        input.disabled = false;
+        window.alert(error.message || '保存源显示设置失败');
+      });
+    });
+  });
+}
+
 function renderCustomSources() {
   return customSourceList().then(function (items) {
     var rows = items.map(function (item) {
@@ -1967,6 +2052,10 @@ function render() {
   if (customSourcesButton) {
     customSourcesButton.classList.toggle('active', current.path === 'custom-sources');
   }
+  var visibilityButton = document.getElementById('visibility-btn');
+  if (visibilityButton) {
+    visibilityButton.classList.toggle('active', current.path === 'source-visibility');
+  }
   var task;
   if (current.path === 'drama') {
     task = renderDrama(params.get('id') || '', params.get('source') || '');
@@ -1976,6 +2065,8 @@ function render() {
     task = renderFavorites(params.get('tab') || '');
   } else if (current.path === 'custom-sources') {
     task = Promise.resolve().then(renderCustomSources);
+  } else if (current.path === 'source-visibility') {
+    task = renderSourceVisibility();
   } else {
     state.category = params.get('category') || '';
     state.page = Number(params.get('page') || 1);
