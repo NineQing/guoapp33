@@ -223,3 +223,38 @@
     验证：hiddenSites 已同时出现在白名单集合与正则中；LocalStore 全部 13 个
     _key(...) 键均被 owns() 覆盖；deleteProfile 依 libraryKeys 清理，随白名单
     自动包含新键。本机无 Flutter/Dart 工具链，由 CI 验证。
+
+十一、2026-10-14 追加修复：GitHub Actions Windows 构建 MinGW 安装失败
+    ----------------------------------------------------------------
+    现象：Actions 的 windows job 在 Install MinGW 步骤报错——
+      choco install mingw --version=13.2.0 返回 HTTP 406 (Not Acceptable)，
+      随后提示 "mingw not installed. The package was not found"，
+      Process completed with exit code 1，Windows 安装包无法产出。
+    根因：Chocolatey 社区源的 mingw 包已升级到 16.1.0，锁定使用的
+      13.2.0 版本被下架，指定旧版本安装时源直接拒绝（406），且工作流
+      没有任何兜底安装通道，一步失败整个 job 失败。
+    修复（本包新增/覆盖）：
+      .github/workflows/build.yml      ★ 重写 Install MinGW 步骤为双通道：
+        1) 主通道仍为 choco install mingw --version=13.2.0（源恢复时即用）；
+        2) 兜底通道：若 choco 后未检测到
+           C:\ProgramData\mingw64\mingw64\bin\x86_64-w64-mingw32-gcc.exe，
+           则从 winlibs GitHub Release 直接下载
+           GCC 13.2.0（posix-seh-ucrt，与原版本 ABI 一致）的 zip，
+           用 runner 自带 7-Zip 解压到 C:\mingw-w64（Expand-Archive 兜底），
+           解压后动态探测 gcc.exe 实际所在前缀目录；
+        3) 两通道均失败时 throw 明确错误信息；
+        4) 检测到前缀后把 <prefix>\bin 追加进 $env:GITHUB_PATH，
+           并保留原逻辑：删除 x86_64-w64-mingw32\lib 下的
+           libpthread.dll.a / libwinpthread.dll.a，强制 Go 静态链接。
+        全程 $ErrorActionPreference='Continue'，避免 choco 非零退出码
+        直接中断后续兜底检测。
+    验证：winlibs 直链经 cfkua / gh-proxy.com / ghfast.top 三镜像 HEAD 均
+      返回 206（文件存在可断点续传）；build.yml 经 pyyaml 解析通过
+      （windows job steps=10）；Install 步骤内嵌脚本经 PowerShell
+      Parser 语法检查 0 error。
+    注意：本节仅改 CI 工作流，不涉及应用源码；与第十节的
+      lib/local_snapshot.dart / pubspec.yaml / README.md 互不影响，
+      第十节文件仍需按上文覆盖上传。
+    上传方式：把本包 .github\workflows\build.yml 覆盖仓库同名文件，
+      git add -A && git commit -m "ci: Windows MinGW 安装加固（choco 主 + winlibs 兜底）" && git push
+      推送后观察 Actions windows job 是否走兜底通道成功产出安装包。
