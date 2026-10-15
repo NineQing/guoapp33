@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -307,11 +308,17 @@ func (engine *nativeEngine) exportCustomMaccmsSources() (string, error) {
 		Count   int          `json:"count"`
 		Sites   []exportItem `json:"sites"`
 	}{Format: customSourceExportFormat, Version: 1, Count: len(items), Sites: items}
-	body, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
+	// Use a dedicated Encoder with SetEscapeHTML(false) so that & < > stay
+	// as literal characters instead of being mangled to \u0026 \u003c \u003e.
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(payload); err != nil {
 		return "", err
 	}
-	return string(body), nil
+	// Encode appends a trailing newline; trim it for clean output.
+	return strings.TrimRight(buf.String(), "\n"), nil
 }
 
 func customSourceExportFilename() string {
