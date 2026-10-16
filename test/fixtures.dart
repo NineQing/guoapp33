@@ -28,6 +28,18 @@ class FixtureRepository extends AppRepository {
   Future<CatalogPage> cached(String source, {String category = ''}) async =>
       cachedPages[source] ?? CatalogPage([]);
   @override
+  Future<CatalogPage> searchAcross(List<String> sources, String query) async {
+    final items = <Drama>[];
+    for (final source in sources) {
+      final page = await catalog(source, query: query);
+      for (final drama in page.items) {
+        if (drama.source != source) continue;
+        items.add(drama);
+      }
+    }
+    return CatalogPage(items);
+  }
+  @override
   Future<String> cover(Drama drama, {bool force = false}) async =>
       throw AppFailure('合成剧集没有远程海报');
   @override

@@ -214,6 +214,8 @@ class Drama {
     this.onlineDate = '',
     this.tags = const [],
     this.releaseStatus = '',
+    // peers 是跨源聚合搜索里其它站源的同一部剧，用于一键切换播放源。
+    this.peers = const [],
   }) : vipStatus = vip;
   final String id;
   final String source;
@@ -230,6 +232,7 @@ class Drama {
   final String onlineDate;
   final List<String> tags;
   final String releaseStatus;
+  final List<Drama> peers;
   String get releaseLabel => switch (releaseStatus) {
     'finished' || 'completed' => '已完结',
     'ongoing' => '连载中',
@@ -257,6 +260,10 @@ class Drama {
     onlineDate: json['onlineDate'] as String? ?? '',
     tags: (json['tags'] as List? ?? const []).whereType<String>().toList(),
     releaseStatus: json['releaseStatus'] as String? ?? '',
+    peers: [
+      for (final row in json['peers'] as List? ?? const [])
+        Drama.fromJson(Map<String, dynamic>.from(row as Map)),
+    ],
   );
   Map<String, dynamic> toJson() => {
     'metadataSchema': 1,
@@ -274,7 +281,27 @@ class Drama {
     'onlineDate': onlineDate,
     'tags': tags,
     'releaseStatus': releaseStatus,
+    if (peers.isNotEmpty) 'peers': [for (final peer in peers) peer.toJson()],
   };
+
+  // withPeers 复制一份并替换跨源副本列表，用于切换播放源时把副本关系传递下去。
+  Drama withPeers(List<Drama> value) => Drama(
+    id: id,
+    source: source,
+    sourceId: sourceId,
+    title: title,
+    description: description,
+    cover: cover,
+    episodes: episodes,
+    category: category,
+    vip: vipStatus,
+    heat: heat,
+    views: views,
+    onlineDate: onlineDate,
+    tags: tags,
+    releaseStatus: releaseStatus,
+    peers: value,
+  );
 
   Drama merge(Drama fresh) {
     if (id != fresh.id) return fresh;
@@ -313,6 +340,7 @@ class Drama {
           fresh.releaseStatus.isEmpty || fresh.releaseStatus == 'unknown'
           ? releaseStatus
           : fresh.releaseStatus,
+      peers: fresh.peers.isEmpty ? peers : fresh.peers,
     );
   }
 }

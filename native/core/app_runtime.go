@@ -71,6 +71,8 @@ type Downloader struct {
 	legacy                *legacyAPIClient
 	previewMu             sync.Mutex
 	previewSessions       map[string]*huangguoPreviewSession
+	hongguoPlayMu         sync.RWMutex
+	hongguoPlaySetting    string
 }
 
 func defaultConfig() Config { return Config{MaxPagesPerSort: 50, PageSize: 30, Retries: 2} }
@@ -91,6 +93,8 @@ type nativeDrama struct {
 	OnlineDate     string   `json:"onlineDate,omitempty"`
 	Tags           []string `json:"tags,omitempty"`
 	ReleaseStatus  string   `json:"releaseStatus,omitempty"`
+	// Peers 在跨源聚合搜索里带上其它站源的同一部剧，供界面一键切换播放源。
+	Peers []nativeDrama `json:"peers,omitempty"`
 }
 
 type nativeInput struct {
@@ -109,6 +113,7 @@ type nativeInput struct {
 	Action           string                  `json:"action"`
 	Directory        string                  `json:"directory"`
 	Source           string                  `json:"source"`
+	Sources          []string                `json:"sources"`
 	Name             string                  `json:"name"`
 	Base             string                  `json:"base"`
 	Rule             string                  `json:"rule"`
@@ -387,6 +392,9 @@ func nativeDispatch(input nativeInput) (any, error) {
 		duration = 10 * time.Second
 	} else if input.Action == "preload" {
 		duration = 15 * time.Second
+	} else if input.Action == "searchAcross" {
+		// 跨源搜索要并发打多个站源，单站 25s 超时，整体放宽到 3 分钟。
+		duration = 3 * time.Minute
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), duration)
 	defer cancel()
@@ -460,6 +468,8 @@ func nativeDispatch(input nativeInput) (any, error) {
 		return plan, err
 	case "catalog":
 		return engine.nativeCatalog(ctx, input)
+	case "searchAcross":
+		return engine.nativeSearchAcross(ctx, input)
 	case "cached":
 		if !validNativeCategory(canonicalProviderSource(input.Source), input.Category) {
 			return nil, errors.New("内容分类无效")
@@ -577,118 +587,8 @@ func (engine *nativeEngine) nativeCatalog(ctx context.Context, input nativeInput
 	}
 	d := engine.downloader
 	result := nativeCatalogResult{Items: []nativeDrama{}, Page: page}
-	if query != "" && source == sourceHongguo {
-		entry, err := d.searchHongguoDramas(ctx, query)
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range entry.Dramas {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.Warning, result.Page = entry.Warning, 1
-		if entry.Limited && result.Warning == "" {
-			result.Warning = "已显示当前可获取的匹配结果，使用更完整的剧名可继续查找"
-		}
-		return result, nil
-	}
-	if query != "" && source == sourceHuangju {
-		items, more, err := d.fetchHuangjuCatalogPage(ctx, page, "", query)
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.HasMore = more
-		return result, nil
-	}
-	if query != "" && source == sourceGuipian {
-		items, more, err := d.fetchGuipianCatalogPage(ctx, page, "", query)
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.HasMore = more
-		return result, nil
-	}
-	if query != "" && source == sourceHanxiaoquan {
-		items, more, err := d.fetchHanxiaoquanCatalogPage(ctx, page, "", query)
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.HasMore = more
-		return result, nil
-	}
-	if query != "" && (source == sourceYeguo || source == sourceDSD) {
-		var items []Drama
-		var more bool
-		var err error
-		if source == sourceYeguo {
-			items, more, err = d.fetchYeguoCatalogPage(ctx, page, "", query)
-		} else {
-			items, more, err = d.fetchDSDCatalogPage(ctx, page, "", query)
-		}
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.HasMore = more
-		return result, nil
-	}
-	if query != "" && isDuanjuProviderSource(source) {
-		if !duanjuSupportsSearch(source) {
-			return result, fmt.Errorf("%s 暂不支持在线搜索，可在已加载内容中筛选", duanjuSourceName(source))
-		}
-		items, err := d.searchDuanju(ctx, source, query)
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		return result, nil
-	}
-	if query != "" && (source == sourceA123 || source == sourceIkanbot) {
-		var items []Drama
-		var more bool
-		var err error
-		if source == sourceA123 {
-			items, more, err = d.fetchA123CatalogPage(ctx, page, "", query)
-		} else {
-			items, more, err = d.fetchIkanbotCatalogPage(ctx, page, "", query)
-		}
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.HasMore = more
-		return result, nil
-	}
 	if query != "" {
-		engine.mu.Lock()
-		items := append([]nativeDrama{}, engine.catalogs[source]...)
-		engine.mu.Unlock()
-		for _, item := range items {
-			text := hongguoSearchText(item.Title + " " + item.Description + " " + strings.Join(item.Tags, " "))
-			matches := true
-			for _, word := range strings.Fields(query) {
-				matches = matches && strings.Contains(text, hongguoSearchText(word))
-			}
-			if matches {
-				result.Items = append(result.Items, item)
-			}
-		}
-		result.LocalSearch = true
-		return result, nil
+		return engine.nativeSearchSource(ctx, source, query, page)
 	}
 	unlock, lockErr := engine.lockSourceCatalog(ctx, source)
 	if lockErr != nil {

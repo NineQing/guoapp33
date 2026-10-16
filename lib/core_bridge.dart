@@ -212,6 +212,8 @@ abstract class AppRepository {
     String category = '',
     bool force = false,
   });
+  // 跨源聚合搜索：并发打所有给定站源，返回按标题/年份/集数归一去重后的结果。
+  Future<CatalogPage> searchAcross(List<String> sources, String query);
   Future<CatalogPage> cached(String source, {String category = ''});
   Future<String> cover(Drama drama, {bool force = false});
   Future<DramaDetail> detail(Drama drama);
@@ -808,6 +810,15 @@ class NativeRepository extends AppRepository {
       'force': force,
     }),
   );
+  @override
+  Future<CatalogPage> searchAcross(List<String> sources, String query) async =>
+      CatalogPage.fromJson(
+        await _call({
+          'action': 'searchAcross',
+          'sources': sources,
+          'query': query,
+        }),
+      );
   @override
   Future<CatalogPage> cached(String source, {String category = ''}) async =>
       CatalogPage.fromJson(

@@ -415,6 +415,9 @@ class _LocalFileRepository extends AppRepository {
     force: force,
   );
   @override
+  Future<CatalogPage> searchAcross(List<String> sources, String query) =>
+      parent.searchAcross(sources, query);
+  @override
   Future<CatalogPage> cached(String source, {String category = ''}) =>
       parent.cached(source, category: category);
   @override

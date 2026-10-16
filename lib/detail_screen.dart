@@ -307,6 +307,75 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  // _openPeerSource 切换到同一部剧在其它站源的副本继续播放。
+  Future<void> _openPeerSource(Drama current, Drama peer) async {
+    if (peer.id == current.id) return;
+    final peers = <Drama>[
+      current.withPeers(const []),
+      ...current.peers.where((item) => item.id != peer.id),
+    ];
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => DetailScreen(
+          drama: peer.withPeers(peers),
+          repository: widget.repository,
+          store: widget.store,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  // _sourceSwitcher 展示同一部剧在其它站源的副本，可一键切换播放源。
+  Widget _sourceSwitcher(Drama drama) {
+    if (drama.peers.isEmpty) return const SizedBox.shrink();
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.swap_horiz_rounded, size: 15, color: colors.primary),
+              const SizedBox(width: 6),
+              Text(
+                '切换播放源',
+                style: TextStyle(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final peer in drama.peers)
+                ActionChip(
+                  key: ValueKey('peer-source-${peer.source}'),
+                  avatar: Icon(
+                    Icons.play_arrow_rounded,
+                    size: 16,
+                    color: colors.onSurfaceVariant,
+                  ),
+                  label: Text(
+                    peer.episodes > 0
+                        ? '${SourceSite.byId(peer.source).name} · ${peer.episodes} 集'
+                        : SourceSite.byId(peer.source).name,
+                  ),
+                  onPressed: () => _openPeerSource(drama, peer),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final drama = _detail?.drama ?? widget.drama;
@@ -835,6 +904,7 @@ class _DetailScreenState extends State<DetailScreen> {
         ),
         const SizedBox(height: 12),
         _followingControls(drama),
+        _sourceSwitcher(drama),
         if (drama.onlineDate.isNotEmpty ||
             drama.heat.isNotEmpty ||
             drama.views.isNotEmpty)

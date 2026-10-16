@@ -64,6 +64,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final _categorySelections = <String, String>{};
   late final CatalogBrowser _browser;
   bool _searchVisible = false;
+  // 勾选后并发搜索所有可见站源并归一去重，取消勾选只搜索当前站源。
+  bool _crossSourceSearch = false;
   bool _categoriesLoading = false;
   String? _categoriesError;
   int _categoryGeneration = 0;
@@ -99,6 +101,15 @@ class _HomeScreenState extends State<HomeScreen> {
         return SourceGroup(site.groupId, site.groupName, [site]);
       })();
   bool get _onlineSearch => _group.sources.any((source) => source.onlineSearch);
+  // 跨源聚合搜索打的是站源管理里勾选显示的可见源，被隐藏的源不参与。
+  List<String> get _visibleSourceIds => [
+    for (final source in widget.store.visibleSources) source.id,
+  ];
+  // 勾选跨源后，即便当前分组本身不支持在线搜索，只要可见源里有能搜的就仍走在线搜索。
+  bool get _canSearchOnline =>
+      _onlineSearch ||
+      (_crossSourceSearch &&
+          widget.store.visibleSources.any((source) => source.onlineSearch));
   bool get _searchSuggestions =>
       _group.sources.any((source) => source.searchSuggestions);
   String get _searchHint {
@@ -513,7 +524,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (more && (_loading || _loadingMore || !_hasMore)) return;
     final generation = ++_generation;
     final group = _group;
-    final query = _onlineSearch ? _search.text.trim() : '';
+    final query = _canSearchOnline ? _search.text.trim() : '';
     setState(() {
       _error = null;
       if (query.isNotEmpty) _categorySelections[group.id] = '';
@@ -549,6 +560,8 @@ class _HomeScreenState extends State<HomeScreen> {
         useCache: useCache,
         force: force,
         cacheOnly: cacheOnly,
+        crossSource: _crossSourceSearch,
+        crossSources: _crossSourceSearch ? _visibleSourceIds : null,
         onCached: (result) => accept(result, cached: true),
       );
       accept(result);
@@ -592,17 +605,25 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadCategories();
   }
 
+  void _changeCrossSource(bool value) {
+    if (_crossSourceSearch == value) return;
+    setState(() => _crossSourceSearch = value);
+    if (_canSearchOnline && _search.text.trim().isNotEmpty) {
+      _load();
+    }
+  }
+
   void _searchChanged(String query) {
     _debounce?.cancel();
     _selectionMode = false;
     _selectedDramas.clear();
-    if (_onlineSearch && (_loading || _loadingMore)) {
+    if (_canSearchOnline && (_loading || _loadingMore)) {
       _generation++;
       unawaited(_browser.cancel());
       _loading = _loadingMore = false;
     }
     setState(() {});
-    if (_onlineSearch && query.trim().isEmpty) {
+    if (_canSearchOnline && query.trim().isEmpty) {
       _debounce = Timer(const Duration(milliseconds: 300), () => _load());
     }
   }
@@ -624,7 +645,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-    if (_onlineSearch) {
+    if (_canSearchOnline) {
       _load();
     } else {
       setState(() {});
@@ -1454,6 +1475,11 @@ class _HomeScreenState extends State<HomeScreen> {
               onChanged: _searchChanged,
               onCancel: () => unawaited(widget.repository.cancelSuggestions()),
               onSearch: _submitSearch,
+              crossSource: _crossSourceSearch,
+              onCrossSourceChanged: _crossSourceSearch || _onlineSearch
+                  ? _changeCrossSource
+                  : null,
+              crossSourceCount: _visibleSourceIds.length,
             ),
           ),
         if (_searchVisible &&

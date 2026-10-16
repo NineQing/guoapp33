@@ -13,6 +13,9 @@ class SearchInput extends StatefulWidget {
     this.suggestions,
     this.onCancel,
     this.autofocus = false,
+    this.crossSource = false,
+    this.onCrossSourceChanged,
+    this.crossSourceCount = 0,
   });
   final TextEditingController controller;
   final String hint;
@@ -21,6 +24,10 @@ class SearchInput extends StatefulWidget {
   final Future<List<String>> Function(String)? suggestions;
   final VoidCallback? onCancel;
   final bool autofocus;
+  // crossSource 勾选后并发搜索所有可见站源，否则只搜索当前站源。
+  final bool crossSource;
+  final ValueChanged<bool>? onCrossSourceChanged;
+  final int crossSourceCount;
   @override
   State<SearchInput> createState() => _SearchInputState();
 }
@@ -163,6 +170,42 @@ class _SearchInputState extends State<SearchInput> {
                     widget.onChanged?.call('');
                     setState(() {});
                   },
+                ),
+              if (widget.onCrossSourceChanged != null)
+                Tooltip(
+                  message: widget.crossSourceCount > 0
+                      ? '搜索可见源：并发搜索 ${widget.crossSourceCount} 个站源并去重'
+                      : '搜索可见源',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () =>
+                        widget.onCrossSourceChanged!(!widget.crossSource),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: Checkbox(
+                              value: widget.crossSource,
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onChanged: (value) => widget
+                                  .onCrossSourceChanged!(value ?? false),
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          const Text('全部源', style: TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               IconButton(
                 tooltip: '搜索',

@@ -190,6 +190,23 @@ func parseRouterData(raw string) map[string]any {
 	return data
 }
 
+// 红果播放形式：1 = App 优先（移植 hongguo-next 的取流链），2 = 网页优先（本项目原有实现，默认）。
+const (
+	hongguoPlayModeAppFirst = "1"
+	hongguoPlayModeWebFirst = "2"
+)
+
+// hongguoPlayMode 返回当前生效的红果播放形式，未知值一律按默认的网页优先处理。
+func (d *Downloader) hongguoPlayMode() string {
+	d.hongguoPlayMu.RLock()
+	mode := d.hongguoPlaySetting
+	d.hongguoPlayMu.RUnlock()
+	if mode == hongguoPlayModeAppFirst {
+		return hongguoPlayModeAppFirst
+	}
+	return hongguoPlayModeWebFirst
+}
+
 func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (providerMedia, error) {
 	source, seriesID, ok := splitProviderDramaID(task.DramaID)
 	if !ok || source != sourceHongguo {
@@ -198,6 +215,9 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	videoID := strings.TrimPrefix(task.Chapter.VideoURL, "hongguo-cenc://")
 	if !hongguoNumericID.MatchString(videoID) || !hongguoNumericID.MatchString(seriesID) {
 		return providerMedia{}, fmt.Errorf("红果章节 ID 无效，请重新获取章节")
+	}
+	if d.hongguoPlayMode() == hongguoPlayModeAppFirst {
+		return d.resolveHongguoMediaAppFirst(ctx, seriesID, videoID)
 	}
 	// 取流顺序与参考项目一致：网页（免费试看范围内的明文 MP4）→ App CENC（试看范围外的加密集）→ 备用接口。
 	// 网页取流内部有 accessible_episode_cnt 闸门：免费集直接命中明文直链，付费集返回“超出试看范围”
@@ -221,6 +241,90 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 		return media, nil
 	}
 	return providerMedia{}, fmt.Errorf("红果网页取流失败：%v；App 取流失败：%v；备用取流失败：%w", publicError(pageErr), publicError(nativeErr), apiErr)
+}
+
+// resolveHongguoMediaAppFirst 是「播放红果源1」的取流链：App 优先。
+//
+// 顺序：① multi_video_model/preload/v1 + fallback_api 二跳（解密 spade_a 取明文直链）
+// → ② 旧 video_model/v1 → ③ 网页 → ④ 备用接口。每路成功都经 finalizeHongguoMedia
+// 补齐 M3U8 清单，避免把首个分片当整集。
+func (d *Downloader) resolveHongguoMediaAppFirst(ctx context.Context, seriesID, videoID string) (providerMedia, error) {
+	media, nativeErr := d.resolveHongguoMultiVideoMedia(ctx, videoID)
+	if nativeErr == nil {
+		return d.finalizeHongguoMedia(ctx, media)
+	}
+	if err := ctx.Err(); err != nil {
+		return providerMedia{}, err
+	}
+	legacyMedia, legacyErr := d.resolveHongguoAppMedia(ctx, videoID)
+	if legacyErr == nil {
+		return d.finalizeHongguoMedia(ctx, legacyMedia)
+	}
+	if err := ctx.Err(); err != nil {
+		return providerMedia{}, err
+	}
+	media, pageErr := d.resolveHongguoWebMediaAppFirst(ctx, seriesID, videoID)
+	if pageErr == nil {
+		return d.finalizeHongguoMedia(ctx, media)
+	}
+	if err := ctx.Err(); err != nil {
+		return providerMedia{}, err
+	}
+	media, apiErr := d.resolveHongguoPlaybackAPI(ctx, seriesID, videoID)
+	if apiErr == nil {
+		return d.finalizeHongguoMedia(ctx, media)
+	}
+	return providerMedia{}, fmt.Errorf("红果 App 取流失败：%v（旧端点回退：%v）；网页取流失败：%v；备用取流失败：%w", publicError(nativeErr), publicError(legacyErr), publicError(pageErr), apiErr)
+}
+
+// finalizeHongguoMedia 是红果取流的统一出口：main_url 常为 .m3u8（内含多个 CDN
+// 分片）。直接返回会让清单为空，代理把首个分片当整集 302 给播放器，导致 seek 出界。
+// 此处对 .m3u8 拉取并填充 Playlist，让代理按 HLS 重写整集分片。
+func (d *Downloader) finalizeHongguoMedia(ctx context.Context, media providerMedia) (providerMedia, error) {
+	parsed, err := url.Parse(media.URL)
+	if err != nil || !strings.HasSuffix(strings.ToLower(parsed.Path), ".m3u8") {
+		return media, nil
+	}
+	playlist, finalURL, err := d.fetchMediaPlaylist(ctx, media.URL, media.Referer)
+	if err != nil {
+		return providerMedia{}, fmt.Errorf("获取红果播放列表失败: %w", err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(playlist, "\ufeff")), "#EXTM3U") {
+		return providerMedia{}, errors.New("红果未返回有效 M3U8，可能需要登录或链接已失效")
+	}
+	if duration := m3u8Duration(playlist); duration > 0 {
+		media.Duration = duration
+	}
+	media.Playlist = playlist
+	media.URL = finalURL
+	return media, nil
+}
+
+// resolveHongguoWebMediaAppFirst 是「播放红果源1」链路里的网页回退，取
+// _ROUTER_DATA 的 video_player_info 地址表。
+func (d *Downloader) resolveHongguoWebMediaAppFirst(ctx context.Context, seriesID, videoID string) (providerMedia, error) {
+	pageURL := hongguoBaseURL + "/player/" + url.PathEscape(seriesID) + "/" + url.PathEscape(videoID)
+	body, err := d.fetchProviderText(ctx, pageURL, hongguoBaseURL+"/")
+	if err != nil {
+		return providerMedia{}, err
+	}
+	page := routerLoaderMap(parseRouterData(body), "player_", "player_page")
+	if mapString(page, "vid") != videoID || mapString(page, "series_id") != seriesID {
+		return providerMedia{}, fmt.Errorf("红果未返回所请求的剧集，可能仅允许网页试看")
+	}
+	info, _ := page["video_player_info"].(map[string]any)
+	addresses := hongguoMediaAddresses(info)
+	if len(addresses) == 0 {
+		return providerMedia{}, fmt.Errorf("红果该集未提供公开播放地址，可能需要登录或 App 授权")
+	}
+	duration, _ := strconv.ParseFloat(mapString(info, "duration"), 64)
+	media := providerMedia{URL: addresses[0], Referer: d.providerBaseURL(sourceHongguo) + "/", Duration: time.Duration(duration * float64(time.Second))}
+	for _, address := range addresses {
+		variant := media
+		variant.URL, variant.Variants = address, nil
+		media.Variants = append(media.Variants, variant)
+	}
+	return media, nil
 }
 
 // resolveHongguoWebMedia 用官网 player 页取【免费试看范围】内的明文 MP4 直链。
