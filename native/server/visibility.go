@@ -16,6 +16,17 @@ import (
 // 自定义源记录、已缓存内容与播放都不受影响。
 const visibilityFile = "source-visibility.json"
 
+// 从未保存过源显示列表时的默认隐藏集，与 App 端
+// SourceSite.defaultHiddenSiteIds 保持一致：
+// 默认可见 = 红果、韩小圈、鬼片、A123、爱看机器人，其余内置源默认隐藏。
+var defaultHiddenSources = map[string]bool{
+	"huangdou": true, "huangju": true, "yeguo": true, "dsd": true,
+	"huangguo-video": true, "huangguoai": true, "cloudfront": true,
+	"yaguo": true, "maoguo": true, "fanguo": true, "guanguo": true,
+	"heguo": true, "xingguo": true, "huaguo": true, "niuguo": true,
+	"wangguo": true, "faguo": true, "wuguo": true,
+}
+
 var (
 	visibilityMu     sync.Mutex
 	visibilityPath   string
@@ -47,8 +58,15 @@ func loadVisibility() {
 						hiddenSources[id] = true
 					}
 				}
+				visibilityLoaded = true
+				return
 			}
 		}
+	}
+	// 无存档（或存档不可读）时落到与 App 端一致的默认隐藏集。
+	hiddenSources = map[string]bool{}
+	for id := range defaultHiddenSources {
+		hiddenSources[id] = true
 	}
 	visibilityLoaded = true
 }

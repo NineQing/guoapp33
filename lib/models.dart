@@ -162,6 +162,31 @@ class SourceSite {
     if (id.startsWith('custom:')) return '自定义源';
     return id;
   }
+
+  /// 从未配置过「源显示列表」时默认隐藏的内置站源。
+  /// 默认可见集 = 红果、韩小圈、鬼片、A123、爱看机器人，
+  /// 其余内置源（黄豆、剧果、野果、帝果、黄果视频、黄果 AI、黄果旧版、
+  /// 芽果、猫果、饭果、观果、河果、星果、花果、牛果、网果、发果、伍果）默认隐藏。
+  static const defaultHiddenSiteIds = <String>{
+    'huangdou',
+    'huangju',
+    'yeguo',
+    'dsd',
+    'huangguo-video',
+    'huangguoai',
+    'cloudfront',
+    'yaguo',
+    'maoguo',
+    'fanguo',
+    'guanguo',
+    'heguo',
+    'xingguo',
+    'huaguo',
+    'niuguo',
+    'wangguo',
+    'faguo',
+    'wuguo',
+  };
 }
 
 class SourceGroup {

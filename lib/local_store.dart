@@ -140,15 +140,29 @@ class LocalStore extends ChangeNotifier {
   }
 
   /// 当前用户被隐藏、不首页显示的站源 id 集合（含内置与自定义站源）。
+  /// 从未在「源显示列表」里配置过时，落到内置默认隐藏集
+  /// （默认可见：红果、韩小圈、鬼片、A123、爱看机器人），
+  /// 用户配置过则以存档值为准。
   Set<String> get hiddenSites {
     if (locked) return const {};
-    try {
-      return (jsonDecode(_string(_key('hiddenSites')) ?? '[]') as List)
-          .whereType<String>()
-          .toSet();
-    } catch (_) {
-      return const {};
+    return _effectiveHiddenSites(_current);
+  }
+
+  Set<String> _effectiveHiddenSites(String profileId) {
+    final raw = _string(_key('hiddenSites', profileId));
+    if (raw == null) {
+      // 从未在「源显示列表」里配置过（新用户）：落到内置默认隐藏集。
+      return Set<String>.of(SourceSite.defaultHiddenSiteIds);
     }
+    try {
+      final stored = jsonDecode(raw);
+      if (stored is List) {
+        // 用户配置过（含手动设为全部可见的空列表）：以存档值为准。
+        return stored.whereType<String>().toSet();
+      }
+    } catch (_) {}
+    // 存档损坏：同样落到默认隐藏集，避免退化为全可见。
+    return Set<String>.of(SourceSite.defaultHiddenSiteIds);
   }
 
   bool siteVisible(String source) => !hiddenSites.contains(source);
@@ -984,9 +998,7 @@ class LocalStore extends ChangeNotifier {
               _string(_key('mediaHistory', profile.id)) ?? '{}',
             ),
             'source': _string(_key('source', profile.id)) ?? '',
-            'hiddenSites': jsonDecode(
-              _string(_key('hiddenSites', profile.id)) ?? '[]',
-            ),
+            'hiddenSites': _effectiveHiddenSites(profile.id).toList(),
             'hideVip': _bool(_key('hideVip', profile.id)) ?? true,
             'playback': jsonDecode(
               _string(_key('playback', profile.id)) ?? '{}',
