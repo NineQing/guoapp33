@@ -105,11 +105,12 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> get _visibleSourceIds => [
     for (final source in widget.store.visibleSources) source.id,
   ];
-  // 勾选跨源后，即便当前分组本身不支持在线搜索，只要可见源里有能搜的就仍走在线搜索。
+  // 勾选跨源后，即便当前分组本身不支持在线搜索，也按全部可见源发起在线搜索。
+  // 自定义源在 Dart 侧 onlineSearch 恒为 false，但 Go 侧 searchAcross 能识别
+  // custom:* 源并并发搜索，不支持搜索的源会被静默跳过；是否真有结果由 Go 判定，
+  // 故这里只看「有没有可见源」，不再用 source.onlineSearch 过滤。
   bool get _canSearchOnline =>
-      _onlineSearch ||
-      (_crossSourceSearch &&
-          widget.store.visibleSources.any((source) => source.onlineSearch));
+      _onlineSearch || (_crossSourceSearch && _visibleSourceIds.isNotEmpty);
   bool get _searchSuggestions =>
       _group.sources.any((source) => source.searchSuggestions);
   String get _searchHint {
@@ -1476,7 +1477,8 @@ class _HomeScreenState extends State<HomeScreen> {
               onCancel: () => unawaited(widget.repository.cancelSuggestions()),
               onSearch: _submitSearch,
               crossSource: _crossSourceSearch,
-              onCrossSourceChanged: _crossSourceSearch || _onlineSearch
+              onCrossSourceChanged: _crossSourceSearch ||
+                      _visibleSourceIds.isNotEmpty
                   ? _changeCrossSource
                   : null,
               crossSourceCount: _visibleSourceIds.length,
