@@ -48,6 +48,18 @@ class DeviceFixtureRepository extends AppRepository {
     bool force = false,
   }) async => CatalogPage([drama]);
   @override
+  Future<CatalogPage> searchAcross(List<String> sources, String query) async {
+    final items = <Drama>[];
+    for (final source in sources) {
+      final page = await catalog(source, query: query);
+      for (final entry in page.items) {
+        if (entry.source != source) continue;
+        items.add(entry);
+      }
+    }
+    return CatalogPage(items);
+  }
+  @override
   Future<DramaDetail> detail(Drama drama) async => DramaDetail(drama, [
     for (final entry in {
       1: 'clear.mp4',
