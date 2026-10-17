@@ -12,6 +12,24 @@ var AUTO_NEXT_KEY = 'duanjuweb:autoNext';
 var PLAY_RATE_KEY = 'duanjuweb:playbackRate';
 // 去广告开关默认开，记在本地；关闭后播放加载原画。
 var AD_BLOCK_KEY = 'duanjuweb:adBlock';
+// 「全部源」勾选偏好记在本地：跨刷新保留，避免切源/翻页时被 URL 参数清掉。
+var ALL_SOURCES_KEY = 'duanjuweb:allSources';
+
+function readAllSources() {
+  try {
+    return window.localStorage.getItem(ALL_SOURCES_KEY) === 'on';
+  } catch (error) {
+    return false;
+  }
+}
+
+function writeAllSources(value) {
+  try {
+    window.localStorage.setItem(ALL_SOURCES_KEY, value ? 'on' : 'off');
+  } catch (error) {
+    // 隐私模式读不了本地存储，只在当前会话生效。
+  }
+}
 
 function readAdBlock() {
   try {
@@ -77,7 +95,7 @@ var state = {
   category: '',
   page: 1,
   query: '',
-  allSources: false,
+  allSources: readAllSources(),
   hasMore: false,
   drama: null,
   chapters: [],
@@ -2185,7 +2203,8 @@ function render() {
   var params = current.params;
   state.source = params.get('source') || state.source;
   state.query = params.get('q') || '';
-  state.allSources = !!params.get('cross') && !!(state.query || params.get('q'));
+  // 「全部源」是持久化勾选偏好（localStorage），不被 URL 参数反向覆盖，
+  // 否则切源 / 翻页 / 换路由会把勾选态悄悄清掉。
   if (sourceSelect.value !== state.source) {
     sourceSelect.value = state.source;
   }
@@ -2251,12 +2270,13 @@ searchForm.addEventListener('submit', function (event) {
   location.hash = hashFor({});
 });
 
-// 「全部源」勾选只影响下一次搜索的发起方式，立即同步进 hash，
-// 避免在目录/剧集页直接换源时把勾选状态丢掉。
+// 「全部源」勾选不再触发整页重渲染（之前 change 时重写 hash 会走一次
+// hashchange → render() 全量刷新，表现为点一下就闪一下）。
+// 勾选态只更新 state 并记到本地；提交搜索时由 hashFor 把 cross=1 写进 hash。
 if (allSourcesInput) {
   allSourcesInput.addEventListener('change', function () {
     state.allSources = allSourcesInput.checked;
-    location.hash = hashFor({});
+    writeAllSources(allSourcesInput.checked);
   });
 }
 

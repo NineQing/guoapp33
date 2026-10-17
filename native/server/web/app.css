@@ -46,14 +46,12 @@ body {
 .search button:hover { border-color: var(--accent); }
 .all-sources {
   display: flex; align-items: center; gap: 4px;
-  padding: 7px 10px; border-radius: 8px;
-  background: var(--panel-2); border: 1px solid var(--line);
-  color: var(--text); font-size: 13px; cursor: pointer; white-space: nowrap;
-  user-select: none;
+  padding: 7px 6px; font-size: 12px; color: var(--muted);
+  cursor: pointer; white-space: nowrap; user-select: none;
 }
-.all-sources:hover { border-color: var(--accent); }
+.all-sources:hover { color: var(--text); }
 .all-sources input { margin: 0; accent-color: var(--accent); }
-.all-sources:has(input:checked) { border-color: var(--accent); color: #fff; }
+.all-sources:has(input:checked) { color: #fff; }
 .cross-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px; margin-bottom: 12px; font-size: 13px; color: var(--muted);
