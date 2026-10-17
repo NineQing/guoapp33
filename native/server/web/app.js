@@ -718,55 +718,300 @@ function ensureDrama(id, source) {
   });
 }
 
-function renderDrama(id, source) {
-  view.innerHTML = '<div class="loading">正在加载剧集详情…</div>';
-  return ensureDrama(id, source).then(function (drama) {
-    var episodes = (state.chapters || [])
-      .map(function (chapter, index) {
-        return (
-          '<a href="#/play?id=' + encodeURIComponent(drama.id) +
-          '&index=' + index +
-          (drama.source ? '&source=' + encodeURIComponent(drama.source) : '') + '">' +
-          escapeHTML(chapter.title || '第 ' + (index + 1) + ' 集') +
-          '</a>'
-        );
+// #/drama（无 index）进入观看页时，落到该剧最近看的一集；没有记录就看第一集。
+function defaultWatchIndex(dramaRef) {
+  var remembered = findEntry(state.library.history, entryKey(dramaRef));
+  return remembered ? Number(remembered.index || 0) : 0;
+}
+
+// 中间选集区：当前集高亮，点击走就地换集（不销毁 <video>，倍速/全屏保留）。
+function episodesGridHTML() {
+  var drama = state.drama;
+  var chapters = state.chapters || [];
+  if (!chapters.length) {
+    return '';
+  }
+  var suffix = drama.source ? '&source=' + encodeURIComponent(drama.source) : '';
+  var cells = chapters
+    .map(function (chapter, position) {
+      var active = position === state.index ? ' active' : '';
+      return (
+        '<a class="ep-link' + active + '" data-index="' + position + '" href="#/play?id=' +
+        encodeURIComponent(drama.id) + '&index=' + position + suffix + '">' +
+        escapeHTML(chapter.title || '第 ' + (position + 1) + ' 集') +
+        '</a>'
+      );
+    })
+    .join('');
+  return (
+    '<div class="section"><div class="section-title">选集（' + chapters.length + '）</div>' +
+    '<div class="episodes">' + cells + '</div></div>'
+  );
+}
+
+// 底部详情区：海报 + 简介 + 元信息 + 切换播放源（同一剧在其它站源的副本）。
+function detailSectionHTML() {
+  var drama = state.drama;
+  var ownSource = drama.source || '';
+  var copies = (state.crossPeers[drama.id] || [])
+    .filter(function (peer) {
+      return peer.source && peer.source !== ownSource;
+    });
+  var peerChips = copies
+    .map(function (peer) {
+      var label = sourceLabel(peer.source) + (peer.episodes ? '（' + peer.episodes + ' 集）' : '');
+      return (
+        '<a class="chip peer-chip" href="#/play?id=' + encodeURIComponent(peer.id) +
+        '&index=' + state.index +
+        (peer.source ? '&source=' + encodeURIComponent(peer.source) : '') + '">' +
+        escapeHTML(label) + '</a>'
+      );
+    })
+    .join('');
+  var peerSection = copies.length
+    ? '<div class="chips"><span class="chips-label">切换播放源：</span>' + peerChips + '</div>'
+    : '';
+  return (
+    '<div class="section"><div class="section-title">详情</div>' +
+    '<div class="detail">' +
+    '<div class="poster">' + coverHTML(drama) + '</div>' +
+    '<div class="info">' +
+    '<h1>' + escapeHTML(drama.title) + '</h1>' +
+    '<div class="desc">' + escapeHTML(drama.description || '暂无简介') + '</div>' +
+    '<div class="meta" style="color:var(--muted)">共 ' + (state.chapters || []).length + ' 集' +
+    (drama.source ? ' · ' + escapeHTML(sourceLabel(drama.source)) : '') + '</div>' +
+    peerSection +
+    '</div></div></div>'
+  );
+}
+
+// 融合观看页整页骨架：顶部播放器（video + 控制条）+ 中间选集 + 底部详情。
+function watchPageHTML(plan, index, message, kind) {
+  var qualities = plan.qualities || [];
+  var current = plan.quality || 0;
+  if (qualities.indexOf(current) === -1 && qualities.length) {
+    current = qualities[0];
+  }
+  var qualitySelect = qualities.length
+    ? '<label>画质 <select id="quality-select">' +
+      qualities
+        .map(function (item) {
+          return optionHTML(item, item + 'P', item === current);
+        })
+        .join('') +
+      '</select></label>'
+    : '';
+  var routeTotal = plan.routeCount || 1;
+  var routeSelect =
+    '<label>线路 <select id="route-select">' +
+    Array.apply(null, new Array(routeTotal))
+      .map(function (unused, position) {
+        return optionHTML(position, '线路 ' + (position + 1) + '/' + routeTotal, position === (plan.routeIndex || 0));
       })
-      .join('');
-    // 同一部剧在其它站源的副本（来自跨源聚合搜索缓存），可一键切换播放源。
-    var ownSource = drama.source || '';
-    var copies = (state.crossPeers[drama.id] || [])
-      .filter(function (peer) {
-        return peer.source && peer.source !== ownSource;
+      .join('') +
+    '</select></label>';
+  var chapters = state.chapters || [];
+  var next = index + 1 < chapters.length ? '<button type="button" class="btn" id="episode-next">下一集</button>' : '';
+  var previous = index > 0 ? '<button type="button" class="btn" id="episode-previous">上一集</button>' : '';
+  var favorite = isFavorite(state.drama)
+    ? '<button type="button" class="btn active" id="fav-toggle">已收藏</button>'
+    : '<button type="button" class="btn" id="fav-toggle">收藏</button>';
+  var autoNextBox = index + 1 < chapters.length
+    ? '<label class="toggle" title="播完自动跳到下一集">' +
+      '<input type="checkbox" id="auto-next"' + (state.autoNext ? ' checked' : '') + '>自动连播</label>'
+    : '';
+  var adBlockBox = '<label class="toggle" title="播放前清洗 m3u8，剔除插播在时间线里的广告分片；关闭后加载原画">' +
+    '<input type="checkbox" id="ad-block"' + (state.adBlock ? ' checked' : '') + '>去广告</label>';
+  var playerWrap =
+    '<div class="player-wrap">' +
+    '<div class="player-title">' +
+    escapeHTML(state.drama.title) + ' · ' + escapeHTML(((state.chapters || [])[index] || {}).title || '') +
+    '</div>' +
+    '<video id="player" controls autoplay playsinline></video>' +
+    '<div class="notice" id="play-note" data-kind="' + kind + '"' +
+    (message ? ' style="display:block"' : '') + '>' +
+    escapeHTML(message) +
+    '</div>' +
+    '<div class="notice next-up" id="next-up"></div>' +
+    '<div class="player-bar">' + qualitySelect + routeSelect +
+    '<span class="spacer"></span>' + adBlockBox + autoNextBox + favorite + previous + next +
+    '</div></div>';
+  return '<div class="watch">' + playerWrap + episodesGridHTML() + detailSectionHTML() + '</div>';
+}
+
+// 融合观看页：#/drama 与 #/play 统一入口，播放器在最上、选集居中、详情沉底。
+function renderWatch(id, index, source) {
+  if (index === undefined || index === null || index === '') {
+    index = defaultWatchIndex({ id: id, source: source });
+  }
+  index = Number(index) || 0;
+  // 整页重建会换掉 <video>，先把倍速和全屏状态记下来。
+  capturePlaybackState();
+  flushProgress();
+  view.innerHTML = '<div class="loading">正在加载剧集…</div>';
+  state.index = index;
+  return ensureDrama(id, source)
+    .then(function () {
+      // 切源/切集后目标集数可能超出该源实际分集数，越界则收回到最后一集。
+      var chapters = state.chapters || [];
+      if (chapters.length && state.index >= chapters.length) {
+        state.index = chapters.length - 1;
+      }
+      index = state.index;
+      return apiPlay({
+        drama: state.drama,
+        chapter: (state.chapters || [])[index],
+        index: index,
+        quality: state.quality || 0,
+        route: state.route || 0,
       });
-    var peerChips = copies
-      .map(function (peer) {
-        var label = sourceLabel(peer.source) + (peer.episodes ? '（' + peer.episodes + ' 集）' : '');
-        return (
-          '<a class="chip peer-chip" href="#/drama?id=' + encodeURIComponent(peer.id) +
-          '&source=' + encodeURIComponent(peer.source) + '">' + escapeHTML(label) + '</a>'
-        );
-      })
-      .join('');
-    var peerSection = copies.length
-      ? '<div class="chips"><span class="chips-label">切换播放源：</span>' + peerChips + '</div>'
-      : '';
-    view.innerHTML =
-      '<div class="detail">' +
-      '<div class="poster">' + coverHTML(drama) + '</div>' +
-      '<div class="info">' +
-      '<h1>' + escapeHTML(drama.title) + '</h1>' +
-      '<div class="desc">' + escapeHTML(drama.description || '暂无简介') + '</div>' +
-      '<div class="meta" style="color:var(--muted)">共 ' + (state.chapters || []).length + ' 集' +
-      (drama.source ? ' · ' + escapeHTML(sourceLabel(drama.source)) : '') + '</div>' +
-      peerSection +
-      '<div class="detail-actions">' +
-      '<button type="button" class="btn" id="fav-toggle">' +
-      (isFavorite(drama) ? '已收藏' : '收藏') +
-      '</button>' +
-      '</div>' +
-      '</div></div>' +
-      '<div class="episodes">' + episodes + '</div>';
-    bindFavoriteToggle(drama);
+    })
+    .then(function (plan) {
+      state.plan = plan;
+      resetRouteTried(plan.routeIndex || 0, plan.routeCount || 1);
+      var message = '';
+      var kind = '';
+      if (plan.message === '需要 ffmpeg 转码' || (plan.mode === 'direct' && plan.encrypted)) {
+        message = FFMPEG_HINT;
+      } else if (plan.mode === 'direct' && plan.hevc) {
+        message = HEVC_NOTICE;
+      } else if (plan.transcoding) {
+        message = '服务端正在转码，首次缓冲可能需要十几秒…';
+        kind = 'transcode';
+      } else if (plan.message) {
+        message = plan.message;
+      }
+      view.innerHTML = watchPageHTML(plan, index, message, kind);
+      var resumeAt = 0;
+      var remembered = findEntry(state.library.history, entryKey(state.drama), index);
+      if (remembered && remembered.position > 5) {
+        resumeAt = remembered.position;
+      }
+      mountVideo(plan.url, resumeAt);
+      bindFavoriteToggle(state.drama);
+      bindEpisodes();
+      // 打开播放页就先记一条播放记录，之后的进度由播放器持续更新。
+      libraryRequest({ list: 'history', op: 'put', item: currentEntry(resumeAt, 0) }).catch(function () {});
+      var qualityBox = document.getElementById('quality-select');
+      if (qualityBox) {
+        qualityBox.addEventListener('change', function () {
+          state.quality = Number(qualityBox.value);
+          state.route = 0;
+          renderWatch(id, index, source);
+        });
+      }
+      var routeBox = document.getElementById('route-select');
+      if (routeBox) {
+        routeBox.addEventListener('change', function () {
+          state.route = Number(routeBox.value);
+          renderWatch(id, index, source);
+        });
+      }
+      var autoNextToggle = document.getElementById('auto-next');
+      if (autoNextToggle) {
+        autoNextToggle.addEventListener('change', function () {
+          state.autoNext = autoNextToggle.checked;
+          writeAutoNext(state.autoNext);
+          if (!state.autoNext) {
+            cancelAutoNext();
+          }
+        });
+      }
+      var adBlockToggle = document.getElementById('ad-block');
+      if (adBlockToggle) {
+        adBlockToggle.addEventListener('change', function () {
+          state.adBlock = adBlockToggle.checked;
+          writeAdBlock(state.adBlock);
+          // 重新解析当前集让开关立即生效（核心按新会话清洗或放行原画）。
+          flushProgress();
+          renderWatch(id, index, source);
+        });
+      }
+      var nextButton = document.getElementById('episode-next');
+      if (nextButton) {
+        nextButton.addEventListener('click', function () {
+          playNextEpisode();
+        });
+      }
+      var previousButton = document.getElementById('episode-previous');
+      if (previousButton) {
+        previousButton.addEventListener('click', function () {
+          playPreviousEpisode();
+        });
+      }
+      // 整页重建（换画质/线路）后，若进入本页前处于全屏，重新进全屏。
+      // 就地换集（下一集/上一集/自动连播）不会走这里，全屏由 <video> 保留。
+      restoreFullscreen();
+    });
+}
+
+// 选集格子点击：拦截默认跳转，改走就地换集，复用同一个 <video>。
+function bindEpisodes() {
+  var links = view.querySelectorAll('.ep-link');
+  Array.prototype.forEach.call(links, function (anchor) {
+    anchor.addEventListener('click', function (event) {
+      var targetIndex = Number(anchor.getAttribute('data-index'));
+      event.preventDefault();
+      if (targetIndex === state.index) {
+        return;
+      }
+      playToIndex(targetIndex);
+    });
+  });
+}
+
+// 就地跳到指定集：复用 <video>，更新选中高亮与地址栏（不整页重建）。
+function playToIndex(targetIndex) {
+  var drama = state.drama;
+  var chapters = state.chapters || [];
+  var video = document.getElementById('player');
+  if (!drama || targetIndex < 0 || targetIndex >= chapters.length) {
+    return Promise.resolve(false);
+  }
+  cancelAutoNext();
+  if (!video) {
+    location.hash = episodeHash(drama.id, drama.source, targetIndex);
+    window.scrollTo(0, 0);
+    return Promise.resolve(true);
+  }
+  state.route = 0;
+  flushProgress();
+  showNotice('正在加载第 ' + (targetIndex + 1) + ' 集…');
+  return apiPlay({
+    drama: drama,
+    chapter: chapters[targetIndex],
+    index: targetIndex,
+    quality: state.quality || 0,
+    route: 0,
+  })
+    .then(function (plan) {
+      if (!document.body.contains(video)) {
+        return false;
+      }
+      state.index = targetIndex;
+      state.plan = plan;
+      resetRouteTried(plan.routeIndex || 0, plan.routeCount || 1);
+      var note = document.getElementById('play-note');
+      if (note) {
+        note.textContent = '';
+        note.style.display = 'none';
+      }
+      syncEpisodeChrome(targetIndex);
+      mountVideo(plan.url, 0);
+      libraryRequest({ list: 'history', op: 'put', item: currentEntry(0, 0) }).catch(function () {});
+      return true;
+    })
+    .catch(function (error) {
+      showNotice(error.message || '切换集数失败，请手动重试。');
+      return false;
+    });
+}
+
+// 就地换集后同步选集格子的高亮（当前集点亮，其余熄灭）。
+function highlightEpisode(index) {
+  var links = view.querySelectorAll('.ep-link');
+  Array.prototype.forEach.call(links, function (anchor) {
+    anchor.classList.toggle('active', Number(anchor.getAttribute('data-index')) === index);
   });
 }
 
@@ -864,6 +1109,8 @@ function syncEpisodeChrome(index) {
     suppressHashRender = true;
     location.hash = hash;
   }
+  // 选集格子高亮跟着当前集走（下一集/上一集/自动连播/点格子四条路径共用这里）。
+  highlightEpisode(index);
 }
 
 // 就地换集：复用同一个 <video>，全屏和倍速都不会被重置。
@@ -1298,162 +1545,6 @@ function optionHTML(value, label, selected) {
   );
 }
 
-function renderPlay(id, index, source) {
-  // 整页重建会换掉 <video>，先把倍速和全屏状态记下来。
-  capturePlaybackState();
-  flushProgress();
-  view.innerHTML = '<div class="loading">正在解析播放地址…</div>';
-  state.index = index;
-  return ensureDrama(id, source)
-    .then(function () {
-      return apiPlay({
-        drama: state.drama,
-        chapter: (state.chapters || [])[index],
-        index: index,
-        quality: state.quality || 0,
-        route: state.route || 0,
-      });
-    })
-    .then(function (plan) {
-      state.plan = plan;
-      resetRouteTried(plan.routeIndex || 0, plan.routeCount || 1);
-      var qualities = plan.qualities || [];
-      var current = plan.quality || 0;
-      if (qualities.indexOf(current) === -1 && qualities.length) {
-        current = qualities[0];
-      }
-      var qualitySelect = qualities.length
-        ? '<label>画质 <select id="quality-select">' +
-          qualities
-            .map(function (item) {
-              return optionHTML(item, item + 'P', item === current);
-            })
-            .join('') +
-          '</select></label>'
-        : '';
-      var routeTotal = plan.routeCount || 1;
-      var routeSelect =
-        '<label>线路 <select id="route-select">' +
-        Array.apply(null, new Array(routeTotal))
-          .map(function (unused, position) {
-            return optionHTML(position, '线路 ' + (position + 1) + '/' + routeTotal, position === (plan.routeIndex || 0));
-          })
-          .join('') +
-        '</select></label>';
-      var suffix = (state.drama.source ? '&source=' + encodeURIComponent(state.drama.source) : '');
-      var hasNextEp = index + 1 < (state.chapters || []).length;
-      var hasPrevEp = index > 0;
-      // 用按钮而不是超链接：点击走就地换集（playNextEpisode / playPreviousEpisode），
-      // 复用同一个 <video>，倍速和全屏都不会被重置。
-      var next = hasNextEp
-        ? '<button type="button" class="btn" id="episode-next">下一集</button>'
-        : '';
-      var previous = hasPrevEp
-        ? '<button type="button" class="btn" id="episode-previous">上一集</button>'
-        : '';
-      var favorite = isFavorite(state.drama)
-        ? '<button type="button" class="btn active" id="fav-toggle">已收藏</button>'
-        : '<button type="button" class="btn" id="fav-toggle">收藏</button>';
-      var hasNext = index + 1 < (state.chapters || []).length;
-      var autoNextBox = hasNext
-        ? '<label class="toggle" title="播完自动跳到下一集">' +
-          '<input type="checkbox" id="auto-next"' + (state.autoNext ? ' checked' : '') + '>自动连播</label>'
-        : '';
-      var adBlockBox = '<label class="toggle" title="播放前清洗 m3u8，剔除插播在时间线里的广告分片；关闭后加载原画">' +
-        '<input type="checkbox" id="ad-block"' + (state.adBlock ? ' checked' : '') + '>去广告</label>';
-      var message = '';
-      var kind = '';
-      if (plan.message === '需要 ffmpeg 转码' || (plan.mode === 'direct' && plan.encrypted)) {
-        message = FFMPEG_HINT;
-      } else if (plan.mode === 'direct' && plan.hevc) {
-        message = HEVC_NOTICE;
-      } else if (plan.transcoding) {
-        message = '服务端正在转码，首次缓冲可能需要十几秒…';
-        kind = 'transcode';
-      } else if (plan.message) {
-        message = plan.message;
-      }
-      view.innerHTML =
-        '<div class="player-wrap">' +
-        '<div class="player-title">' +
-        escapeHTML(state.drama.title) + ' · ' + escapeHTML(((state.chapters || [])[index] || {}).title || '') +
-        '</div>' +
-        '<video id="player" controls autoplay playsinline></video>' +
-        '<div class="notice" id="play-note" data-kind="' + kind + '"' +
-        (message ? ' style="display:block"' : '') + '>' +
-        escapeHTML(message) +
-        '</div>' +
-        '<div class="notice next-up" id="next-up"></div>' +
-        '<div class="player-bar">' + qualitySelect + routeSelect +
-        '<span class="spacer"></span>' +
-        adBlockBox +
-        autoNextBox +
-        '<a class="btn" href="#/drama?id=' + encodeURIComponent(id) + suffix + '">返回详情</a>' +
-        favorite +
-        previous +
-        next +
-        '</div></div>';
-      var resumeAt = 0;
-      var remembered = findEntry(state.library.history, entryKey(state.drama), index);
-      if (remembered && remembered.position > 5) {
-        resumeAt = remembered.position;
-      }
-      mountVideo(plan.url, resumeAt);
-      bindFavoriteToggle(state.drama);
-      // 打开播放页就先记一条播放记录，之后的进度由播放器持续更新。
-      libraryRequest({ list: 'history', op: 'put', item: currentEntry(resumeAt, 0) }).catch(function () {});
-      var qualityBox = document.getElementById('quality-select');
-      if (qualityBox) {
-        qualityBox.addEventListener('change', function () {
-          state.quality = Number(qualityBox.value);
-          state.route = 0;
-          renderPlay(id, index, source);
-        });
-      }
-      var routeBox = document.getElementById('route-select');
-      if (routeBox) {
-        routeBox.addEventListener('change', function () {
-          state.route = Number(routeBox.value);
-          renderPlay(id, index, source);
-        });
-      }
-      var autoNextToggle = document.getElementById('auto-next');
-      if (autoNextToggle) {
-        autoNextToggle.addEventListener('change', function () {
-          state.autoNext = autoNextToggle.checked;
-          writeAutoNext(state.autoNext);
-          if (!state.autoNext) {
-            cancelAutoNext();
-          }
-        });
-      }
-      var adBlockToggle = document.getElementById('ad-block');
-      if (adBlockToggle) {
-        adBlockToggle.addEventListener('change', function () {
-          state.adBlock = adBlockToggle.checked;
-          writeAdBlock(state.adBlock);
-          // 重新解析当前集让开关立即生效（核心按新会话清洗或放行原画）。
-          flushProgress();
-          renderPlay(id, index, source);
-        });
-      }
-      var nextButton = document.getElementById('episode-next');
-      if (nextButton) {
-        nextButton.addEventListener('click', function () {
-          playNextEpisode();
-        });
-      }
-      var previousButton = document.getElementById('episode-previous');
-      if (previousButton) {
-        previousButton.addEventListener('click', function () {
-          playPreviousEpisode();
-        });
-      }
-      // 整页重建（换画质/线路）后，若进入本页前处于全屏，重新进全屏。
-      // 就地换集（下一集/上一集/自动连播）不会走这里，全屏由 <video> 保留。
-      restoreFullscreen();
-    });
-}
 
 function libraryCardHTML(entry, tab) {
   var key = entryKey(entry);
@@ -2227,10 +2318,12 @@ function render() {
     visibilityButton.classList.toggle('active', current.path === 'source-visibility');
   }
   var task;
+  // #/drama 与 #/play 统一渲染融合观看页（播放器在上、选集居中、详情沉底）；
+  // 旧链接 #/play 继续兼容，落到同一页并带上 index。
   if (current.path === 'drama') {
-    task = renderDrama(params.get('id') || '', params.get('source') || '');
+    task = renderWatch(params.get('id') || '', '', params.get('source') || '');
   } else if (current.path === 'play') {
-    task = renderPlay(params.get('id') || '', Number(params.get('index') || 0), params.get('source') || '');
+    task = renderWatch(params.get('id') || '', Number(params.get('index') || 0), params.get('source') || '');
   } else if (current.path === 'favorites') {
     task = renderFavorites(params.get('tab') || '');
   } else if (current.path === 'custom-sources') {
@@ -2288,10 +2381,11 @@ window.addEventListener('hashchange', function () {
     return;
   }
   var current = hashParams();
-  if (current.path !== 'play') {
+  // 融合后 #/drama 与 #/play 是同一个观看页：离开这两者才停播放；
+  // 只在观看页之间换集时回到默认线路，画质沿用上次的选择。
+  if (current.path !== 'drama' && current.path !== 'play') {
     stopPlayback();
   } else if (Number(current.params.get('index') || 0) !== state.index) {
-    // 换集时回到默认线路，画质沿用上次的选择。
     state.route = 0;
   }
   render();

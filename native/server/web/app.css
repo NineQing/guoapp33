@@ -179,6 +179,26 @@ body {
 .btn.danger:hover { background: #7a2b2f; color: #fff; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .detail-actions { margin-top: 12px; }
+/* 融合观看页：播放器（上）+ 选集（中）+ 详情（下）三段式 */
+.watch { max-width: 900px; margin: 0 auto; }
+.watch .player-wrap { max-width: none; }
+.watch .player-wrap video { width: 100%; }
+.watch .player-wrap video.portrait {
+  width: min(70%, calc((100vh - 400px) * var(--ratio, 0.5625)));
+}
+.section { margin-top: 22px; }
+.section-title {
+  font-size: 14px; font-weight: 600; color: var(--muted);
+  margin-bottom: 10px;
+}
+.episodes { margin-top: 0; }
+.ep-link.active {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.chips-label {
+  align-self: center; font-size: 13px; color: var(--muted);
+  padding: 6px 4px;
+}
 /* 收藏夹 */
 .lib-tabs {
   display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;
