@@ -4,6 +4,7 @@ var view = document.getElementById('view');
 var sourceSelect = document.getElementById('source');
 var searchInput = document.getElementById('search-input');
 var searchForm = document.getElementById('search-form');
+var allSourcesInput = document.getElementById('all-sources');
 
 // 自动连播的开关存在浏览器本地，换浏览器重开也保留上次的选择。
 var AUTO_NEXT_KEY = 'duanjuweb:autoNext';
@@ -76,6 +77,7 @@ var state = {
   category: '',
   page: 1,
   query: '',
+  allSources: false,
   hasMore: false,
   drama: null,
   chapters: [],
@@ -91,6 +93,8 @@ var state = {
   libraryTab: 'history',
   libraryEditing: false,
   librarySelected: {},
+  // 跨源聚合搜索得到的同名剧副本（按剧 id 缓存），供详情页「切换播放源」使用。
+  crossPeers: {},
 };
 
 var hlsInstance = null;
@@ -536,6 +540,7 @@ function hashFor(overrides) {
     category: state.category,
     page: state.page,
     q: state.query,
+    cross: state.allSources ? 1 : '',
   };
   Object.keys(overrides || {}).forEach(function (key) {
     merged[key] = overrides[key];
@@ -544,8 +549,75 @@ function hashFor(overrides) {
   query.set('source', merged.source);
   if (merged.category) query.set('category', merged.category);
   if (merged.q) query.set('q', merged.q);
+  if (merged.cross) query.set('cross', '1');
   query.set('page', String(merged.page));
   return '#/home?' + query.toString();
+}
+
+// 「全部源」聚合搜索：勾选时一次并发打所有可见源（含自定义源），
+// 核心按标题/年份/集数归一去重后合并返回；不勾选时保持单源目录行为。
+function renderCrossSearch() {
+  view.innerHTML = '<div class="loading">正在搜索全部源…</div>';
+  return visibilityList().then(function (items) {
+    var ids = items.filter(function (item) { return item.visible; }).map(function (item) {
+      return item.id;
+    });
+    if (!ids.length) {
+      throw new Error('没有开启显示的站源，请先在「源显示」里开启');
+    }
+    return api({ action: 'searchAcross', sources: ids, query: state.query, page: 1 });
+  }).then(function (result) {
+    renderCrossResults(result, ids);
+  });
+}
+
+function renderCrossResults(result, requestedIds) {
+  var items = result.items || [];
+  var hasMore = !!result.hasMore;
+  state.hasMore = hasMore;
+  // 缓存同名剧的各源副本，供详情页「切换播放源」使用（含当前源自身）。
+  items.forEach(function (drama) {
+    if (!drama.id) {
+      return;
+    }
+    state.crossPeers[drama.id] = [drama].concat(drama.peers || []);
+  });
+  var cards = items.map(function (drama) {
+    var sources = [drama.source || ''].concat(
+      (drama.peers || []).map(function (peer) { return peer.source || ''; })
+    ).filter(function (value, position, list) {
+      return value && list.indexOf(value) === position;
+    });
+    var badge = sources.map(function (source) {
+      return '<span class="card-source" title="' + escapeHTML(sourceLabel(source)) + '">' +
+        escapeHTML(sourceLabel(source)) + '</span>';
+    }).join('');
+    return (
+      '<div class="card"><a href="#/drama?id=' + encodeURIComponent(drama.id) +
+      (drama.source ? '&source=' + encodeURIComponent(drama.source) : '') + '">' +
+      coverHTML(drama) +
+      '<div class="title">' + escapeHTML(drama.title) + '</div>' +
+      '<div class="meta">' + escapeHTML(drama.episodes ? drama.episodes + ' 集' : '') + '</div>' +
+      (badge ? '<div class="meta">' + badge + '</div>' : '') +
+      '</a></div>'
+    );
+  }).join('');
+  var warning = result.warning
+    ? '<div class="cross-warning">部分站源未返回结果：' + escapeHTML(result.warning) + '</div>'
+    : '';
+  var next = hasMore
+    ? '<a href="' + escapeHTML(link(hashFor({ page: state.page + 1 }))) + '">下一页</a>'
+    : '';
+  var searched = ((result.sources) || []).join('、');
+  view.innerHTML =
+    '<div class="cross-head">' +
+    '<span>全部源搜索「' + escapeHTML(state.query) + '」命中 ' + items.length + ' 条' +
+    (searched ? '（' + escapeHTML(searched) + '）' : '') + '</span>' +
+    '<a href="' + escapeHTML(link(hashFor({ q: '' }))) + '">返回目录</a>' +
+    '</div>' +
+    warning +
+    '<div class="grid">' + (cards || '<div class="empty">没有找到内容，换个关键词试试。</div>') + '</div>' +
+    (next ? '<div class="pager">' + next + '</div>' : '');
 }
 
 function renderCatalog() {
@@ -642,13 +714,33 @@ function renderDrama(id, source) {
         );
       })
       .join('');
+    // 同一部剧在其它站源的副本（来自跨源聚合搜索缓存），可一键切换播放源。
+    var ownSource = drama.source || '';
+    var copies = (state.crossPeers[drama.id] || [])
+      .filter(function (peer) {
+        return peer.source && peer.source !== ownSource;
+      });
+    var peerChips = copies
+      .map(function (peer) {
+        var label = sourceLabel(peer.source) + (peer.episodes ? '（' + peer.episodes + ' 集）' : '');
+        return (
+          '<a class="chip peer-chip" href="#/drama?id=' + encodeURIComponent(peer.id) +
+          '&source=' + encodeURIComponent(peer.source) + '">' + escapeHTML(label) + '</a>'
+        );
+      })
+      .join('');
+    var peerSection = copies.length
+      ? '<div class="chips"><span class="chips-label">切换播放源：</span>' + peerChips + '</div>'
+      : '';
     view.innerHTML =
       '<div class="detail">' +
       '<div class="poster">' + coverHTML(drama) + '</div>' +
       '<div class="info">' +
       '<h1>' + escapeHTML(drama.title) + '</h1>' +
       '<div class="desc">' + escapeHTML(drama.description || '暂无简介') + '</div>' +
-      '<div class="meta" style="color:var(--muted)">共 ' + (state.chapters || []).length + ' 集</div>' +
+      '<div class="meta" style="color:var(--muted)">共 ' + (state.chapters || []).length + ' 集' +
+      (drama.source ? ' · ' + escapeHTML(sourceLabel(drama.source)) : '') + '</div>' +
+      peerSection +
       '<div class="detail-actions">' +
       '<button type="button" class="btn" id="fav-toggle">' +
       (isFavorite(drama) ? '已收藏' : '收藏') +
@@ -1676,6 +1768,61 @@ function renderSourceVisibility() {
   });
 }
 
+// 设置页：红果源取流算法切换（与 Flutter 站源管理里的选择项同一份资源设置，
+// 经核心的 resourceSettings / saveResourceSettings 读写，默认「网页优先」）。
+function renderSettings() {
+  view.innerHTML = '<div class="loading">正在加载设置…</div>';
+  return api({ action: 'resourceSettings' }).then(function (settings) {
+    var mode = settings.hongguoPlayMode || '2';
+    var options = [
+      { value: '1', text: '播放红果源1 · App 优先（移植实现）' },
+      { value: '2', text: '播放红果源2 · 网页优先（默认）' },
+    ];
+    var radioHtml = options.map(function (option) {
+      return (
+        '<label class="set-row">' +
+        '<input type="radio" name="hongguo-play-mode" value="' + option.value + '"' +
+        (mode === option.value ? ' checked' : '') + ' />' +
+        '<span>' + option.text + '</span>' +
+        '</label>'
+      );
+    }).join('');
+    view.innerHTML =
+      '<div class="lib">' +
+      '<div class="lib-tabs"><span class="lib-tab active">设置</span></div>' +
+      '<div style="font-size:13px;opacity:0.75;padding:4px 2px 12px">' +
+      '红果源的取流算法有两种实现，对红果站源的所有播放生效：' +
+      '</div>' +
+      radioHtml +
+      '<div class="set-actions">' +
+      '<button type="button" class="btn" id="set-save">保存</button>' +
+      '<span id="set-status" style="font-size:12px;opacity:0.7"></span>' +
+      '</div>' +
+      '</div>';
+    var saveButton = document.getElementById('set-save');
+    var status = document.getElementById('set-status');
+    saveButton.addEventListener('click', function () {
+      saveButton.disabled = true;
+      status.textContent = '';
+      var chosen = view.querySelector('input[name="hongguo-play-mode"]:checked');
+      if (!chosen) {
+        saveButton.disabled = false;
+        return;
+      }
+      api({
+        action: 'saveResourceSettings',
+        settings: Object.assign({}, settings, { hongguoPlayMode: chosen.value }),
+      }).then(function () {
+        status.textContent = '已保存';
+      }).catch(function (error) {
+        status.textContent = '保存失败：' + (error.message || '');
+      }).then(function () {
+        saveButton.disabled = false;
+      });
+    });
+  });
+}
+
 function bindSourceVisibilityView() {
   var toggles = view.querySelectorAll('.vis-toggle');
   Array.prototype.forEach.call(toggles, function (input) {
@@ -2038,11 +2185,15 @@ function render() {
   var params = current.params;
   state.source = params.get('source') || state.source;
   state.query = params.get('q') || '';
+  state.allSources = !!params.get('cross') && !!(state.query || params.get('q'));
   if (sourceSelect.value !== state.source) {
     sourceSelect.value = state.source;
   }
   if (searchInput.value !== state.query) {
     searchInput.value = state.query;
+  }
+  if (allSourcesInput) {
+    allSourcesInput.checked = state.allSources;
   }
   var favoritesButton = document.getElementById('favorites-btn');
   if (favoritesButton) {
@@ -2067,10 +2218,16 @@ function render() {
     task = Promise.resolve().then(renderCustomSources);
   } else if (current.path === 'source-visibility') {
     task = renderSourceVisibility();
+  } else if (current.path === 'settings') {
+    task = Promise.resolve().then(renderSettings);
   } else {
     state.category = params.get('category') || '';
     state.page = Number(params.get('page') || 1);
-    task = renderCatalog();
+    task = state.allSources && state.query ? renderCrossSearch() : renderCatalog();
+  }
+  var settingsButton = document.getElementById('settings-btn');
+  if (settingsButton) {
+    settingsButton.classList.toggle('active', current.path === 'settings');
   }
   task.catch(function (error) {
     view.innerHTML = '<div class="empty">' + escapeHTML(error.message || '加载失败') + '</div>';
@@ -2093,6 +2250,15 @@ searchForm.addEventListener('submit', function (event) {
   state.category = '';
   location.hash = hashFor({});
 });
+
+// 「全部源」勾选只影响下一次搜索的发起方式，立即同步进 hash，
+// 避免在目录/剧集页直接换源时把勾选状态丢掉。
+if (allSourcesInput) {
+  allSourcesInput.addEventListener('change', function () {
+    state.allSources = allSourcesInput.checked;
+    location.hash = hashFor({});
+  });
+}
 
 window.addEventListener('hashchange', function () {
   // 就地换集时只改了地址栏（syncEpisodeChrome 会置位 suppressHashRender），
