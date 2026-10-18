@@ -2,9 +2,11 @@
 
 自编译版加入 韩小圈，鬼片，A123（青空已下线移除）
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.2+92（未验证开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.2+93（未验证开发快照）**。
 
-本轮（1.4.2+92）修复：Android 端切换 xigua 播放器「有声无画」。根因定位（对照源项目 guoappzhi）：xigua 在 Android 走自定义平台视图 `duanju/video_surface`，其原生半边 `android/app/src/main/kotlin/com/duanju/duanju_app/VideoSurfaceHost.kt`（注册 `onAddView` 工厂、经 `MediaKitAndroidHelper.newGlobalObjectRef` 回传 wid 给 Dart）移植时漏掉了，故 mpv `vo:gpu+wid` 渲染目标接不上。修复：补齐 `VideoSurfaceHost.kt`、在 `MainActivity.configureFlutterEngine` 加 `flutterEngine.plugins.add(VideoSurfacePlugin())`，并把 `lib/xigua/android_video_surface.dart` 的 `androidSurfaceViewSupported` 恢复为 `!kIsWeb && Platform.isAndroid`（重加 `dart:io`）以启用硬件 SurfaceView；Dart 侧原有 `onUnavailable → _fallbackToTextureOutput` 兜底保留，原生 surface 异常时自动退回 texture。
+本轮（1.4.2+93）修复本地 Web 服务器版直播「点播放列表后一直加载、无画面」。根因：秀果（xiuguo，pingtai 协议）频道实际下发的是 **.flv** 直播流（`http://.../cx_*.flv?wsSecret=...`，已探测官方接口确认），而 Web 端只接了 hls.js（m3u8）与原生 `video.src`；且 `livePlayRoute` 的 `isHls` 判定误用「代理 URL 前缀」而非「真实媒体后缀」，把 `.flv` 也送进 hls.js——hls.js 无法解析 FLV，流虽被代理取到却永不解码 → 一直加载无画面。修复：① 新增 `native/server/web/flv.min.js`（flv.js 1.6.2，`index.html` 在 hls.min.js 后引入），`livePlayRoute` 按 URL 真实后缀分发——`.flv` 走 flv.js（`createPlayer + attachMediaElement + load`）、`.m3u8` 走 hls.js、其余走原生 `video.src`，解码器统一挂到 ArtPlayer 的 video 元素；`liveStopDecoder` 在换台/停播/离页时销毁 flv.js 与 hls.js 实例。② ArtPlayer 与 video 默认**静音开播**（浏览器只允许静音自动播放，未静音会被拦、ArtPlayer 转圈不消失），用户可用 ArtPlayer 控件开声。
+
+上一轮（1.4.2+92）修复：Android 端切换 xigua 播放器「有声无画」。根因定位（对照源项目 guoappzhi）：xigua 在 Android 走自定义平台视图 `duanju/video_surface`，其原生半边 `android/app/src/main/kotlin/com/duanju/duanju_app/VideoSurfaceHost.kt`（注册 `onAddView` 工厂、经 `MediaKitAndroidHelper.newGlobalObjectRef` 回传 wid 给 Dart）移植时漏掉了，故 mpv `vo:gpu+wid` 渲染目标接不上。修复：补齐 `VideoSurfaceHost.kt`、在 `MainActivity.configureFlutterEngine` 加 `flutterEngine.plugins.add(VideoSurfacePlugin())`，并把 `lib/xigua/android_video_surface.dart` 的 `androidSurfaceViewSupported` 恢复为 `!kIsWeb && Platform.isAndroid`（重加 `dart:io`）以启用硬件 SurfaceView；Dart 侧原有 `onUnavailable → _fallbackToTextureOutput` 兜底保留，原生 surface 异常时自动退回 texture。
 
 上一轮（1.4.2+91）两项：本地 Web 服务器版直播模块改造（播放器换 ArtPlayer + 界面重排 + 取消线路源）与全端直播播放消除 mpv「非可寻址」提示。
 

@@ -2314,7 +2314,9 @@ function livePost(path, payload) {
 }
 
 var liveHlsInstance = null;
-// ArtPlayer 实例（直播播放器的 UI 外壳；m3u8/代理流仍走 hls.js 挂到其 .video 元素）。
+// flv.js 实例（秀果等直播源下发的是 .flv 流，浏览器原生与 hls.js 都无法解码，需 flv.js）。
+var liveFlvInstance = null;
+// ArtPlayer 实例（直播播放器的 UI 外壳；m3u8 走 hls.js、flv 走 flv.js，都挂到其 .video 元素）。
 var liveArtplayer = null;
 var liveState = {
   source: '',
@@ -2361,7 +2363,7 @@ function liveEnsureArtplayer() {
       type: '',
       isLive: true,
       autoplay: true,
-      muted: false,
+      muted: true,
       volume: .8,
       loop: false,
       pip: false,
@@ -2451,7 +2453,7 @@ function liveMountChannel(channel, startIndex) {
 }
 
 // 取直播播放用的 <video>：ArtPlayer 存在时用它的 video 元素，
-// hls.js / src 都挂到同一元素上，ArtPlayer 的控件仍对该元素生效。
+// hls.js / flv.js / src 都挂到同一元素上，ArtPlayer 的控件仍对该元素生效。
 function livePlayRoute(urls, index) {
   if (!urls || index >= urls.length) {
     showNotice('全部线路都无法播放');
@@ -2465,40 +2467,93 @@ function livePlayRoute(urls, index) {
     : first;
   var video = liveVideoElement();
   if (!video) { return; }
-  if (liveHlsInstance) { liveHlsInstance.destroy(); liveHlsInstance = null; }
+  // 直播默认静音开播：浏览器只允许「静音」自动播放，未静音会 play() 被拦、
+  // ArtPlayer 转圈永不消失、表现为「一直加载无画面」。用户可点 ArtPlayer 控件开声。
+  video.muted = true;
+  liveStopDecoder();
   liveState.urlList = urls;
   liveState.urlIndex = index;
-  if (first.indexOf('rtmp') === 0 || first.indexOf('rtsp') === 0) {
+  if (first.indexOf('rtmp') === 0 || first.indexOf('rtsp') === 0 ||
+      first.indexOf('rtp') === 0 || first.indexOf('udp') === 0) {
     showNotice('该线路是 ' + first.split('://')[0] + ' 协议，浏览器无法直接播放');
     return;
   }
-  var isHls = /\.m3u8($|\?)/i.test(first) || /^\/api\/livestream\/stream/i.test(target);
-  if (isHls && window.Hls && window.Hls.isSupported()) {
-    liveHlsInstance = new window.Hls({ lowLatencyMode: false, enableWorker: true });
-    liveHlsInstance.on(window.Hls.Events.ERROR, function (event, data) {
-      if (!data || !data.fatal) { return; }
-      if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
-        liveHlsInstance.recoverMediaError();
-        return;
-      }
-      if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
-        showNotice('线路 ' + (index + 1) + ' 异常，尝试下一条…');
-        livePlayRoute(urls, index + 1);
-      }
-    });
-    liveHlsInstance.loadSource(target);
-    liveHlsInstance.attachMedia(video);
-  } else {
-    video.src = target;
+  // 判定真实媒体类型：按 URL 原始后缀（而非代理前缀）。秀果等直播源下发 .flv，
+  // 浏览器原生与 hls.js 都无法解码，必须走 flv.js；.m3u8 走 hls.js；其余直连 src。
+  var pathOnly = first.split('?')[0].split('#')[0];
+  var isFlv = /\.flv$/i.test(pathOnly);
+  var isHls = /\.m3u8$/i.test(pathOnly);
+  if (isFlv && window.flvjs && window.flvjs.isSupported()) {
+    liveStartFlv(video, target);
+    return;
   }
+  if (isHls && window.Hls && window.Hls.isSupported()) {
+    liveStartHls(video, target, urls, index);
+    return;
+  }
+  // 兜底：直连 video.src（mp4 等浏览器原生可解的格式）。
+  video.src = target;
   video.play().catch(function () {});
 }
 
-function liveStopPlayer() {
+// flv.js 解码 .flv 直播流，挂到 ArtPlayer 的 video 元素。
+function liveStartFlv(video, target) {
+  try {
+    liveFlvInstance = window.flvjs.createPlayer({
+      type: 'flv',
+      url: target,
+      isLive: true,
+      hasAudio: true,
+      enableStashBuffer: true,
+      stashInitialSize: 512,
+      lazyLoad: false,
+      autoCleanupSourceBuffer: true,
+    });
+  } catch (error) {
+    showNotice('FLV 解码器初始化失败');
+    return;
+  }
+  liveFlvInstance.attachMediaElement(video);
+  liveFlvInstance.on(window.flvjs.Events.ERROR, function (type, detail) {
+    showNotice('FLV 流异常（' + detail + '）');
+  });
+  liveFlvInstance.load();
+  video.play().catch(function () {});
+}
+
+// hls.js 解码 .m3u8 直播流，挂到 ArtPlayer 的 video 元素。
+function liveStartHls(video, target, urls, index) {
+  liveHlsInstance = new window.Hls({ lowLatencyMode: false, enableWorker: true });
+  liveHlsInstance.on(window.Hls.Events.ERROR, function (event, data) {
+    if (!data || !data.fatal) { return; }
+    if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+      liveHlsInstance.recoverMediaError();
+      return;
+    }
+    if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+      showNotice('线路 ' + (index + 1) + ' 异常，尝试下一条…');
+      livePlayRoute(urls, index + 1);
+    }
+  });
+  liveHlsInstance.loadSource(target);
+  liveHlsInstance.attachMedia(video);
+  video.play().catch(function () {});
+}
+
+// 销毁 flv.js / hls.js 解码器（换台、离页、停播时调用，避免后台继续拉流）。
+function liveStopDecoder() {
+  if (liveFlvInstance) {
+    try { liveFlvInstance.destroy(); } catch (error) {}
+    liveFlvInstance = null;
+  }
   if (liveHlsInstance) {
-    liveHlsInstance.destroy();
+    try { liveHlsInstance.destroy(); } catch (error) {}
     liveHlsInstance = null;
   }
+}
+
+function liveStopPlayer() {
+  liveStopDecoder();
   var stage = document.getElementById('live-stage');
   if (stage) {
     var video = stage.querySelector('#live-player, .art-video');
@@ -2847,7 +2902,7 @@ function renderLiveView() {
 function render() {
   cancelAutoNext();
   // 路由离开直播页时停掉直播播放器，避免后台继续拉流。
-  if (location.hash.indexOf('#/live') !== 0 && (liveHlsInstance || liveArtplayer)) {
+  if (location.hash.indexOf('#/live') !== 0 && (liveHlsInstance || liveFlvInstance || liveArtplayer)) {
     liveStopPlayer();
     liveReleaseArtplayer();
     liveState.playing = null;
