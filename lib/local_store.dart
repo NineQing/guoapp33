@@ -12,6 +12,7 @@ import 'catalog_sort.dart';
 import 'follow_state.dart';
 import 'hongguo_series.dart';
 import 'lan_sync_models.dart';
+import 'xigua/watch_stats.dart';
 
 part 'local_store_sync.dart';
 
@@ -124,6 +125,17 @@ class LocalStore extends ChangeNotifier {
   }
 
   bool get canDownload => !locked && (profile.admin || profile.download);
+  WatchStats get watchStats {
+    if (locked) return const WatchStats();
+    try {
+      return WatchStats.fromJson(
+        jsonDecode(_string(_key('watchStats')) ?? '{}'),
+      );
+    } catch (_) {
+      return const WatchStats();
+    }
+  }
+
   bool allowsSource(String source) {
   if (locked) return false;
   if (!SourceSite.isAvailable(source)) return false;
@@ -529,6 +541,9 @@ class LocalStore extends ChangeNotifier {
       {'auto', 'television', 'standard'}.contains(value)
       ? _setting('displayMode', value)
       : Future.value();
+  String get player => _string('player') == 'xigua' ? 'xigua' : 'guo';
+  Future<void> setPlayer(String value) =>
+      {'guo', 'xigua'}.contains(value) ? _setting('player', value) : Future.value();
   Future<void> setThemeMode(String value) =>
       {'light', 'dark', 'system'}.contains(value)
       ? _setting('themeMode', value)
@@ -624,10 +639,19 @@ class LocalStore extends ChangeNotifier {
     });
   }
 
-  Future<void> saveWatch(WatchEntry entry) {
+  Future<void> saveWatch(
+    WatchEntry entry, {
+    double watchSeconds = 0,
+    int completedEpisodes = 0,
+  }) {
     final epoch = _epoch;
     return _queue(() async {
       if (!allowsSource(entry.drama.source) || epoch != _epoch) return;
+      final stats = watchStats.addSample(
+        source: entry.drama.source,
+        seconds: watchSeconds,
+        episodes: completedEpisodes,
+      );
       final previous = _history[entry.drama.id]?.drama;
       final current = previous == null
           ? entry
@@ -654,6 +678,7 @@ class LocalStore extends ChangeNotifier {
         _key('history'): jsonEncode(
           sorted.take(300).map((entry) => entry.toJson()).toList(),
         ),
+        _key('watchStats'): jsonEncode(stats.toJson()),
         if (following != null) ...{
           _key('followStates'): _encodeFollowStates(states),
           _key('favorites'): jsonEncode(
@@ -679,7 +704,12 @@ class LocalStore extends ChangeNotifier {
     }
   }
 
-  Future<void> saveMediaWatch(String id, WatchEntry entry) {
+  Future<void> saveMediaWatch(
+    String id,
+    WatchEntry entry, {
+    double watchSeconds = 0,
+    int completedEpisodes = 0,
+  }) {
     final epoch = _epoch;
     return _queue(() async {
       if (!canDownload ||
@@ -693,7 +723,15 @@ class LocalStore extends ChangeNotifier {
       while (data.length > 300) {
         data.remove(data.keys.first);
       }
-      await _commit({_key('mediaHistory'): jsonEncode(data)});
+      final stats = watchStats.addSample(
+        source: entry.drama.source,
+        seconds: watchSeconds,
+        episodes: completedEpisodes,
+      );
+      await _commit({
+        _key('mediaHistory'): jsonEncode(data),
+        _key('watchStats'): jsonEncode(stats.toJson()),
+      });
     });
   }
 

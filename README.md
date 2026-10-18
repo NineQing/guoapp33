@@ -2,9 +2,17 @@
 
 自编译版加入 韩小圈，鬼片，A123（青空已下线移除）
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.3.0+87（未验证开发快照）**。1.0.0 起默认版显示名为“短剧视界”、`--all-sources` 全站源版为“全剧视界”，分发文件名前缀为 `duanjushijie` / `quanjushijie`；GitHub Release 只发布短剧视界版安装包，全剧视界版只在 Actions Artifact 下载；Android Actions 不再保留构建日志上传。上一轮（1.0.2+76）新增播放线路选择与线路复用：清晰度按钮右侧新增“线路 N”按钮，点击打开线路列表，可在播放中切换线路并保留当前位置与播放状态；选定线路后，同一剧集的后续集数（含自动连播、遥控上一集 / 下一集、滑动切集、选集菜单）默认复用该线路，不再从第一条线路重新尝试；切换下一集时默认不再弹出暂停按钮，只有单击画面、按空格暂停等原有操作才显示控制层，静默数秒自动隐藏的逻辑保留。线路列表来自站源返回的同一集多地址（按画质优先排序），原生核心新增 `selectRoute` 动作与 `nativePreferredRoute` 收敛 0 值与越界值，Dart 端切换线路时保留原会话再重开，切集时把当前线路索引传给解析与预加载。改动涉及 `lib/player_screen.dart`、`lib/player_controls.dart`、`lib/player_menu.dart`、`lib/television_controls.dart`、`lib/player_interactions.dart`、`lib/core_bridge.dart`、`lib/playback_loader.dart`、`lib/playback_preloader.dart`、`lib/local_media_screen.dart` 与 `native/core` 的播放线路代码。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.0+88（未验证开发快照）**。1.0.0 起默认版显示名为“短剧视界”、`--all-sources` 全站源版为“全剧视界”，分发文件名前缀为 `duanjushijie` / `quanjushijie`；GitHub Release 只发布短剧视界版安装包，全剧视界版只在 Actions Artifact 下载；Android Actions 不再保留构建日志上传。上一轮（1.0.2+76）新增播放线路选择与线路复用：清晰度按钮右侧新增“线路 N”按钮，点击打开线路列表，可在播放中切换线路并保留当前位置与播放状态；选定线路后，同一剧集的后续集数（含自动连播、遥控上一集 / 下一集、滑动切集、选集菜单）默认复用该线路，不再从第一条线路重新尝试；切换下一集时默认不再弹出暂停按钮，只有单击画面、按空格暂停等原有操作才显示控制层，静默数秒自动隐藏的逻辑保留。线路列表来自站源返回的同一集多地址（按画质优先排序），原生核心新增 `selectRoute` 动作与 `nativePreferredRoute` 收敛 0 值与越界值，Dart 端切换线路时保留原会话再重开，切集时把当前线路索引传给解析与预加载。改动涉及 `lib/player_screen.dart`、`lib/player_controls.dart`、`lib/player_menu.dart`、`lib/television_controls.dart`、`lib/player_interactions.dart`、`lib/core_bridge.dart`、`lib/playback_loader.dart`、`lib/playback_preloader.dart`、`lib/local_media_screen.dart` 与 `native/core` 的播放线路代码。
 
-本轮（1.3.0+87）三项改动：红果源播放形式可切换、搜索改为调用站源接口并支持跨源聚合、修复播放器隔几秒的轻微卡顿。
+本轮（1.4.0+88）移植 guoappzhi 项目的播放器与直播功能，App 四端与本地 Web 服务器版同步落地。
+
+1. xigua 播放器整套移植与 guo / xigua 双播放器切换（`lib/xigua/` 20 个文件、`lib/player_picker.dart`、`lib/player_route.dart`、`lib/local_store.dart`、`lib/playback_preferences.dart`、`lib/catalog_sort.dart`、`lib/core_bridge.dart`、`lib/detail_screen.dart`、`lib/downloads_screen.dart`、`lib/local_media_screen.dart`、`lib/main.dart`、`lib/playback_launch_screen.dart`）。本项目原内置播放器定名 guo，从 guoappzhi 移植的播放器定名 xigua，整套原样移植（弹幕、玻璃面板、推荐、观看统计、长按倍速档位、滑动跳转等子系统齐全）；类名 `PlayerScreen` 改名 `XiguaPlayerScreen` 避免与 guo 冲突，相对导入统一改写为 `package:duanju_app/xigua/...` 绝对路径。播放偏好新增 `player` 项（默认 guo，随账号持久化），`player_picker.dart` 的 `buildPlayerRoute` / `pushPlayer` 按偏好分发，全部 6 个点播跳转点（详情页、下载页、本地媒体、局域网推送、直启播放两处）接通；「播放器选择」页单选后可立即生效。与本项目分叉的公共文件取并集合并：`playback_preferences.dart` 保留本项目广告过滤开关并加入 xigua 的长按倍速 / 滑动跳转 / 自动小窗三项；`local_store.dart` 并入观看统计（`watchStats`，随播放进度落盘）；`catalog_sort.dart` 并入 `searchKeyword` 标题归一；`core_bridge.dart` 的 `AppRepository.searchProgress` 在本项目 Go 核心缺少对应通道时安全退化为空结果。
+2. 直播功能移植。App 端为 `lib/live_screen.dart`、`lib/live_player_screen.dart`、`lib/live_repository.dart`、`lib/live_parser.dart`、`lib/live_http.dart`、`lib/live_models.dart`、`lib/live_sources.dart`、`lib/live_store.dart`、`lib/live_playback.dart` 九件套，加 `lib/app_notice.dart`、`lib/glass_panel.dart`、`lib/screen_awake.dart`、`lib/sleep_timer.dart`、`lib/watch_session.dart`、`lib/player_route.dart` 支撑文件；内置秀果（pingtai 平台协议、多镜像合并）、txt 直连、m3u8 三类源，支持自定义直播源、收藏、绿色模式过滤（分类白名单 + 隐藏成人源）、多线路自动切换、休眠定时器与屏幕常亮。本地 Web 服务器版独立实现于 `native/server/livestream.go`（Go 复刻 Dart 侧 LiveRepository / LiveParser / LiveHttp 语义：json.txt 多镜像合并、`#genre#` / m3u8 / JSON 三种清单格式解析、绿色白名单、UA / Cookie 保持、m3u8 相对地址逐行改写经 `/api/livestream/stream` 代理转发）与 `native/server/web/app.js` 直播视图（独立 hls.js 实例与点播隔离、localStorage 收藏、路由离开自动停流、自定义源表单），自定义源持久化到数据目录 `live-sources.json`。
+3. 菜单接线（`lib/home_screen.dart`、`native/server/web/index.html`）。App 四端右上角菜单在「站源管理」与「用户管理」之间依次新增「播放器选择」「直播入口」两项，手机 / 桌面弹出菜单与 Android TV 遥控菜单两处布局同步；本地 Web 服务器版顶栏在「设置」与「收藏夹」之间只加「直播」入口，Web 版不加播放器选择（点播仍走 hls.js 现有通道）。
+
+验证：Dart 侧 `dart analyze lib` 0 error 0 warning（剩余 110 条 info 均为移植文件自带的风格提示）；Go 侧 `go build ./...` 与 `go vet ./server` 通过；Web 前端 `node --check` 通过。直播 API 面在本机起服务实测通过：sources（绿色开 / 关对内置源与自定义源的过滤）、platforms（秀果真实分类返回，含 endpoint 与频道数）、channels（flv 频道直链解析）、custom-sources 新增 / 删除、stream 对 m3u8 清单的逐行代理改写均返回正确。App 端直播与 xigua 播放器的真实播放、四端菜单实际布局、Web 直播页的浏览器验收仍待真机 / 浏览器确认；按约定本轮仍为未验证开发快照。
+
+上一轮（1.3.0+87）三项改动：红果源播放形式可切换、搜索改为调用站源接口并支持跨源聚合、修复播放器隔几秒的轻微卡顿。
 
 1. 红果源播放形式可切换（`native/core/provider_hongguo.go`、`provider_hongguo_multi_media.go`、`provider_hongguo_spade.go`、`app_settings.go`、`lib/resource_settings.dart`、`lib/sources_screen.dart`）。站源管理页新增「红果源播放形式」下拉，两个实现并存、随时可切、默认保持本项目原有的网页优先形式。播放红果源1 为移植自 hongguo-next 的 App 优先链路：`multi_video_model/preload/v1` → 旧版 `video_model/v1` → 网页 → 备用接口，并用 `finalizeHongguoMedia` 拉取 m3u8 清单补全时长与分片，修掉「首个 4MB 分片被当成整集」的问题；播放红果源2 为本项目原有的网页优先链路：网页 `ld+json` 的 `contentUrl` 与 `accessible_episode_cnt` 试看闸门 → App CENC → 备用接口，天然实现「前几集走网页、后面走 App」。新增的 `provider_hongguo_spade.go` 提供 spade_a 地址解密（hongguo-next 该逻辑依赖其 `core/danmaku/sign/aes` 包，本项目没有该包，改用标准库 `crypto/aes` + `cipher` 实现等价的 AES-CBC 解密）；`provider_hongguo_multi_media.go` 为移植过来的 App 多档位取流。开关 `hongguoPlayMode` 随资源设置持久化到 `resource-settings.json`，只接受 `1` / `2`，空值或非法值一律回落默认的网页优先。
 2. 搜索改为一律调用站源自身的搜索接口（`native/core/app_runtime.go`、`app_search_across.go`）。原先不支持在线搜索的站源会退回「从已加载资源里本地筛选」（`LocalSearch` 分支），现已删除该兜底：搜索一律请求站源自身的搜索接口，不支持在线搜索的站源返回明确错误，不再静默给出一个看似成功、实际只是本地过滤的结果。原来的七段 `query != "" && source == X` 分支抽成 `nativeSearchSource`，供单源与跨源两条路径复用。
@@ -69,8 +77,8 @@ iOS 发热排查：原配置 `enableHardwareAcceleration: !Platform.isIOS` 会�
 
 | 编译方式 | 显示名 | 分发包前缀 | 示例 |
 | --- | --- | --- | --- |
-| 默认 | 短剧视界 | `duanjushijie` | `duanjushijie-1.3.0+87-arm64-v8a.apk`、`duanjushijie.exe` |
-| `--all-sources` | 全剧视界 | `quanjushijie` | `quanjushijie-1.3.0+87-arm64-v8a.apk`、`quanjushijie.exe` |
+| 默认 | 短剧视界 | `duanjushijie` | `duanjushijie-1.4.0+88-arm64-v8a.apk`、`duanjushijie.exe` |
+| `--all-sources` | 全剧视界 | `quanjushijie` | `quanjushijie-1.4.0+88-arm64-v8a.apk`、`quanjushijie.exe` |
 
 两版保留原 Android / iOS 应用标识及数据目录；Android 使用同一签名可相互覆盖升级，不能作为两个独立正式应用并排安装。Windows 沿用原内部产品标识与数据目录。切换版本保留追剧、观看记录、用户权限和下载记录；短剧视界版隐藏其他站源内容，恢复全站源版后可继续使用。备份格式也保持兼容。
 
@@ -227,6 +235,14 @@ iOS 发热排查：原配置 `enableHardwareAcceleration: !Platform.isIOS` 会�
 仅显示经过当前播放分集 ID、源站状态和原始毫秒时间戳校验的弹幕文字，过滤重复及无效内容；普通评论不进入弹幕。文字限定在实际视频画面内，暂停和缓冲时停止移动，倍速、跳转和切集按视频时间同步。关闭、切集、切换用户或离开播放器会清理旧内容并取消在途请求；后台隐藏弹幕并停止请求，本地播放不联网加载弹幕。
 
 弹幕使用独立低优先级请求、短超时及有限缓存，按源站真实时间游标续载。失败只在弹幕设置中显示状态与重试入口，播放和下载可继续。Flutter 线性动画负责移动，普通播放进度回报不会重启动画，文字测量仅在内容或布局变化时执行。必要合成测试已通过，真实站源返回和各平台显示效果仍待集中验收。
+
+### xigua 播放器与双播放器切换（1.4.0）
+
+1.4.0 从 guoappzhi 项目整套移植播放器，定名 xigua，与本项目原内置播放器（定名 guo）并存，可在「播放器选择」页（首页右上角菜单「站源管理」与「用户管理」之间）随时切换，默认 guo；选择随账号持久化，本地 Web 服务器版不参与切换（点播仍走 hls.js 现有通道）。xigua 为整套原样移植：弹幕、玻璃面板、推荐、观看统计、长按倍速档位、滑动跳转、倍速与画面设置等子系统齐全，代码隔离在 `lib/xigua/` 子目录（类名 `PlayerScreen` 改名 `XiguaPlayerScreen`，导入统一改写为 `package:duanju_app/xigua/...`）。全部 6 个点播跳转点（详情页、下载页、本地媒体、局域网推送播放、直启播放两处）按 `player` 偏好经 `lib/player_picker.dart` 的 `buildPlayerRoute` / `pushPlayer` 分发到两个播放器。与本项目分叉的公共文件取并集合并：播放偏好保留本项目广告过滤开关并加入 xigua 的长按倍速 / 滑动跳转秒数 / 自动小窗三项；本地存储并入观看统计（随播放进度落盘）；目录工具并入搜索标题归一；跨源进度通道在本项目 Go 核心缺少对应实现时安全退化为空结果。真实播放、手势与画面效果需构建后在设备上验收。
+
+### 直播（1.4.0）
+
+1.4.0 从 guoappzhi 项目移植直播功能，App 四端入口在首页右上角菜单「站源管理」与「用户管理」之间的「直播入口」；本地 Web 服务器版入口在顶栏「设置」与「收藏夹」之间的「直播」。内置秀果源（pingtai 平台协议，json.txt 多镜像合并）、txt 直连源与 m3u8 源三类，支持添加自定义直播源（App 与 Web 均有管理入口，Web 版持久化到数据目录 `live-sources.json`）、频道收藏、按分类绿色模式过滤（白名单分类 + 隐藏成人源，默认关闭绿色时仍隐藏成人分组）、多线路自动切换（当前线路失败自动换下一条）、休眠定时器与屏幕常亮。Web 版直播后端为 `native/server/livestream.go`，以 Go 复刻 Dart 侧仓库 / 解析 / HTTP 语义（三种清单格式解析、UA / Cookie 保持、m3u8 相对地址逐行改写经 `/api/livestream/stream` 代理），前端使用独立 hls.js 实例与点播隔离，路由离开直播页自动停流；rtmp / rtsp 线路浏览器不支持，给出明确提示。API 面已在本机起服务实测（源列表 / 平台分类 / 频道 / 自定义源增删 / m3u8 改写全部返回正确），真实频道的可播性与各端 UI 仍待设备与浏览器验收。
 
 ### 追剧、更新提醒与历史
 
@@ -723,10 +739,10 @@ SR-1、SR-2 与 SR-4 已接入源码，小型动漫 CNN 也包含在本轮；SR-
 
 | 平台 | 包与状态 |
 | --- | --- |
-| Android 8.0+ 手机 | 源码已更新到 `1.3.0+87`（未验证）：站源管理新增「红果源播放形式」下拉（红果源1 App 优先 / 红果源2 网页优先，默认后者），搜索改为调用站源接口并在「全部源」勾选后并发搜所有可见源、按标题 / 年份 / 集数归一去重、详情页一键切换播放源，播放中新增 HLS 分片顺序预取以消除隔几秒的轻微卡顿；保留「源显示列表」管理项、进度条拖动快退 / 快进、左半屏竖拖临时调整显示亮度、播放线路按钮与线路复用、双击暂停 / 继续、切集不弹出暂停按钮和原有单击 / 长按 / 滑动手势；红果源1 取流效果、跨源搜索真实命中与卡顿是否消失均需真机验收，真实安装、播放交互、热量和帧耗仍待设备验收 |
-| Windows 10/11 x64 | 源码版本为 `1.3.0+87`，共用红果源播放形式切换、跨源聚合搜索与播放分片预取，以及播放启动互斥修复与站源「源显示列表」；`1.0.3+77`（未验证）在 1.0.2+76 的线路按钮与线路复用基础上让左右键快进 / 快退不再显示跳转提示、跳转引起的缓冲也不再弹出控制层；便携版完整解压后运行 `duanjushijie.exe`，全站源版为 `quanjushijie.exe`，保留所有 DLL 和 `data`；安装 / 升级 / 卸载与桌面运行待验收，局域网原生发现依赖 Windows 10 1903+ |
-| Android TV | 与手机共用 `1.3.0+87` 源码并保持电视遥控布局，共用红果源播放形式切换、跨源聚合搜索、播放分片预取与播放启动互斥修复；电视播放设置面板在有多条线路时显示“线路 N”按钮；待电视 / 盒子实机验收；0.2.12 选集 / 设置及 0.2.13 同步仍待集中验证 |
-| iOS 15.1+ | 源码已更新到 `1.3.0+87`（未验证），共用红果源播放形式切换与跨源聚合搜索；首页和观看历史在详情加载期间忽略重复播放点击，移动播放器支持双击画面暂停 / 继续播放（亮度手势为 Android 专属，iOS 保持上下滑切集）；仍需签名安装与真机播放验收；已加入工程、Go 核心链接、媒体依赖、文件管理、系统代理桥接、Bonjour / 局域网权限和构建脚本，尚无已签名 IPA |
+| Android 8.0+ 手机 | 源码已更新到 `1.4.0+88`（未验证）：1.4.0 移植 xigua 播放器（与内置 guo 双播放器可在「播放器选择」页随时切换，默认 guo）与直播功能（秀果 / txt / m3u8 源、自定义源、收藏、绿色模式、休眠定时），右上角菜单在「站源管理」与「用户管理」之间新增「播放器选择」「直播入口」；1.3.0 站源管理新增「红果源播放形式」下拉（红果源1 App 优先 / 红果源2 网页优先，默认后者），搜索改为调用站源接口并在「全部源」勾选后并发搜所有可见源、按标题 / 年份 / 集数归一去重、详情页一键切换播放源，播放中新增 HLS 分片顺序预取以消除隔几秒的轻微卡顿；保留「源显示列表」管理项、进度条拖动快退 / 快进、左半屏竖拖临时调整显示亮度、播放线路按钮与线路复用、双击暂停 / 继续、切集不弹出暂停按钮和原有单击 / 长按 / 滑动手势；红果源1 取流效果、跨源搜索真实命中与卡顿是否消失均需真机验收，真实安装、播放交互、热量和帧耗仍待设备验收 |
+| Windows 10/11 x64 | 源码版本为 `1.4.0+88`，共用 xigua 播放器移植与双播放器切换、直播入口（菜单「站源管理」与「用户管理」之间）与 1.3.0 的红果源播放形式切换、跨源聚合搜索与播放分片预取，以及播放启动互斥修复与站源「源显示列表」；`1.0.3+77`（未验证）在 1.0.2+76 的线路按钮与线路复用基础上让左右键快进 / 快退不再显示跳转提示、跳转引起的缓冲也不再弹出控制层；便携版完整解压后运行 `duanjushijie.exe`，全站源版为 `quanjushijie.exe`，保留所有 DLL 和 `data`；安装 / 升级 / 卸载与桌面运行待验收，局域网原生发现依赖 Windows 10 1903+ |
+| Android TV | 与手机共用 `1.4.0+88` 源码并保持电视遥控布局，共用 xigua 播放器移植与双播放器切换、直播入口（遥控菜单同样在「站源管理」与「用户管理」之间）、红果源播放形式切换、跨源聚合搜索、播放分片预取与播放启动互斥修复；电视播放设置面板在有多条线路时显示“线路 N”按钮；待电视 / 盒子实机验收；0.2.12 选集 / 设置及 0.2.13 同步仍待集中验证 |
+| iOS 15.1+ | 源码已更新到 `1.4.0+88`（未验证），共用 xigua 播放器移植与双播放器切换、直播入口、红果源播放形式切换与跨源聚合搜索；首页和观看历史在详情加载期间忽略重复播放点击，移动播放器支持双击画面暂停 / 继续播放（亮度手势为 Android 专属，iOS 保持上下滑切集）；仍需签名安装与真机播放验收；已加入工程、Go 核心链接、媒体依赖、文件管理、系统代理桥接、Bonjour / 局域网权限和构建脚本，尚无已签名 IPA |
 
 | 历史版本 0.2.15 | 安装包 | 大小 |
 | --- | --- | --- |

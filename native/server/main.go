@@ -924,6 +924,7 @@ func main() {
 	// 播放记录与收藏跟着数据目录走，删掉数据目录即可一并清空。
 	setLibraryDirectory(directory)
 	setVisibilityDirectory(directory)
+	setLiveWebDirectory(directory)
 	encoded, err := json.Marshal(map[string]any{"action": "initialize", "directory": directory})
 	if err != nil {
 		log.Fatalf("初始化请求编码失败：%v", err)
@@ -949,6 +950,11 @@ func main() {
 	mux.HandleFunc("/api/play", handlePlay)
 	mux.HandleFunc("/api/media/", handleMedia)
 	mux.HandleFunc("/api/live/", handleLive)
+	mux.HandleFunc("/api/livestream/sources", handleLiveSources)
+	mux.HandleFunc("/api/livestream/custom-sources", handleLiveCustomSources)
+	mux.HandleFunc("/api/livestream/platforms", handleLivePlatforms)
+	mux.HandleFunc("/api/livestream/channels", handleLiveChannels)
+	mux.HandleFunc("/api/livestream/stream", handleLivestreamStream)
 	mux.HandleFunc("/api/cover", handleCover)
 	mux.HandleFunc("/api/sources", handleSources)
 	mux.HandleFunc("/api/source-visibility", handleSourceVisibility)

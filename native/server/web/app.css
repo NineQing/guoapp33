@@ -231,3 +231,58 @@ body {
   background: var(--panel-2); overflow: hidden;
 }
 .progress span { display: block; height: 100%; background: var(--accent); }
+/* ---- 直播视图 ---- */
+.live-wrap { max-width: 900px; margin: 0 auto; }
+.live-stage {
+  background: #000; border-radius: 10px; overflow: hidden;
+  aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center;
+}
+.live-stage video { width: 100%; height: 100%; display: block; background: #000; }
+.live-idle, .live-unsupported {
+  color: var(--muted); font-size: 14px; padding: 20px; text-align: center;
+}
+.live-unsupported { color: #ff8b90; }
+.live-title {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 15px; margin: 10px 0; min-height: 24px;
+}
+.live-title .live-group {
+  font-size: 12px; color: var(--muted); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px;
+}
+.live-panel {
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); padding: 12px; margin-bottom: 16px;
+}
+.live-sources, .live-platforms {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.btn.mini { padding: 4px 10px; font-size: 12px; border-radius: 999px; }
+.live-custom-form {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  padding: 10px 0; border-top: 1px dashed var(--line); margin-bottom: 8px;
+}
+.live-custom-form input {
+  flex: 1 1 140px; min-width: 0; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 8px; color: var(--text);
+  padding: 6px 10px; font-size: 13px;
+}
+.live-custom-form span { font-size: 12px; color: var(--muted); }
+.live-list { max-height: 420px; overflow-y: auto; }
+.live-group-head {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--panel); color: var(--muted);
+  font-size: 13px; padding: 6px 4px; border-bottom: 1px solid var(--line);
+}
+.live-count { font-size: 11px; opacity: 0.8; }
+.live-channel {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: none; border: none; border-bottom: 1px solid rgba(42, 47, 58, 0.4);
+  color: var(--text); font-size: 13px; padding: 7px 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.live-channel:hover { background: var(--panel-2); color: #fff; }
+.live-channel.active { background: var(--accent); color: #fff; }
+.live-channel.live-fav::before { content: "★ "; color: #f5b83d; }
+.live-channel.live-fav.active::before { color: #fff; }

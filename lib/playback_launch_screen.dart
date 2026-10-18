@@ -6,7 +6,7 @@ import 'core_bridge.dart';
 import 'follow_state.dart';
 import 'local_store.dart';
 import 'models.dart';
-import 'player_screen.dart';
+import 'player_picker.dart';
 import 'widgets.dart';
 
 Future<void> openPlaybackDirectly(
@@ -14,6 +14,7 @@ Future<void> openPlaybackDirectly(
   required Drama drama,
   required AppRepository repository,
   required LocalStore store,
+  String searchKeyword = '',
 }) async {
   final profileEpoch = store.profileEpoch;
   try {
@@ -61,16 +62,14 @@ Future<void> openPlaybackDirectly(
         ? watched!.position
         : 0.0;
     if (!context.mounted || profileEpoch != store.profileEpoch) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PlayerScreen(
-          detail: merged,
-          initialIndex: index,
-          initialPosition: position,
-          repository: repository,
-          store: store,
-        ),
-      ),
+    await pushPlayer<void>(
+      context,
+      detail: merged,
+      initialIndex: index,
+      initialPosition: position,
+      repository: repository,
+      store: store,
+      searchKeyword: searchKeyword,
     );
   } catch (error) {
     if (!context.mounted || profileEpoch != store.profileEpoch) return;
@@ -188,14 +187,13 @@ class _PlaybackLaunchScreenState extends State<PlaybackLaunchScreen> {
         return;
       }
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => PlayerScreen(
-            detail: merged,
-            initialIndex: index,
-            initialPosition: position,
-            repository: widget.repository,
-            store: widget.store,
-          ),
+        buildPlayerRoute<void>(
+          context,
+          detail: merged,
+          initialIndex: index,
+          initialPosition: position,
+          repository: widget.repository,
+          store: widget.store,
         ),
       );
     } catch (error) {

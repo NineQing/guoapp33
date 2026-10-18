@@ -198,3 +198,26 @@ List<Drama> sortCatalog(Iterable<Drama> rows, CatalogView view) {
   });
   return items;
 }
+
+String searchKeyword(String title) {
+  var value = title.trim();
+  if (value.isEmpty) return '';
+  value = value.replaceAll(RegExp(r'[（(\[【][^）)\]】]*[）)\]】]'), '');
+  value = value.replaceAll(
+    RegExp(
+      r'(?:第\s*[0-9零〇一二两兩三四五六七八九十百千]+\s*[季部篇]|'
+      r'[0-9零〇一二两兩三四五六七八九十百千]+\s*[季部篇]|'
+      r'season\s*\d+|s\d+|'
+      r'(?:全|共)\s*[0-9零〇一二两兩三四五六七八九十百千]+\s*集|'
+      r'[0-9]+\s*集全?|'
+      r'[（(]?(?:完结|全集|大结局|抢先版|预告|花絮|合集|短剧|高清|超清|蓝光|4k|1080p|720p)[）)]?)',
+      caseSensitive: false,
+    ),
+    '',
+  );
+  value = value.replaceAll(RegExp(r'[\s\u3000·\-—_~～|/\\]+'), ' ');
+  value = value.replaceAll(RegExp(r'^[\s·\-—_~～|/\\]+'), '');
+  value = value.replaceAll(RegExp(r'[\s·\-—_~～|/\\]+$'), '');
+  return value.trim();
+}
+

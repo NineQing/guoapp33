@@ -10,7 +10,7 @@ import 'download_collections.dart';
 import 'local_store.dart';
 import 'local_media_screen.dart';
 import 'models.dart';
-import 'player_screen.dart';
+import 'player_picker.dart';
 import 'remote_widgets.dart';
 import 'settings_screen.dart';
 import 'widgets.dart';
@@ -624,20 +624,22 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         ? watch.position
         : 0.0;
     try {
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) =>
-              widget.playerBuilder?.call(detail, index, position) ??
-              PlayerScreen(
-                detail: detail,
-                initialIndex: index,
-                initialPosition: position,
-                repository: widget.repository,
-                store: widget.store,
-                localOnly: true,
-              ),
-        ),
-      );
+      final built = widget.playerBuilder?.call(detail, index, position);
+      if (built != null) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => built),
+        );
+      } else {
+        await pushPlayer<void>(
+          context,
+          detail: detail,
+          initialIndex: index,
+          initialPosition: position,
+          repository: widget.repository,
+          store: widget.store,
+          localOnly: true,
+        );
+      }
     } finally {
       _opening = false;
       if (mounted) await _refresh();

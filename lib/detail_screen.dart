@@ -15,7 +15,7 @@ import 'download_picker.dart';
 import 'downloads_screen.dart';
 import 'local_store.dart';
 import 'models.dart';
-import 'player_screen.dart';
+import 'player_picker.dart';
 import 'remote_widgets.dart';
 import 'widgets.dart';
 import 'sources_screen.dart';
@@ -266,16 +266,13 @@ class _DetailScreenState extends State<DetailScreen> {
     if (!mounted || _profileEpoch != widget.store.profileEpoch) {
       return;
     }
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PlayerScreen(
-          detail: detail,
-          initialIndex: index,
-          initialPosition: position,
-          repository: widget.repository,
-          store: widget.store,
-        ),
-      ),
+    await pushPlayer<void>(
+      context,
+      detail: detail,
+      initialIndex: index,
+      initialPosition: position,
+      repository: widget.repository,
+      store: widget.store,
     );
     if (mounted) {
       setState(() {});

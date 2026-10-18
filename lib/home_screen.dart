@@ -33,6 +33,10 @@ import 'batch_download_screen.dart';
 import 'batch_downloads.dart';
 import 'drama_actions.dart';
 import 'library_updater.dart';
+import 'live_repository.dart';
+import 'live_screen.dart';
+import 'live_store.dart';
+import 'player_picker.dart';
 import 'saved_library.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -70,6 +74,11 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _categoriesError;
   int _categoryGeneration = 0;
   late final LibraryUpdater _updater;
+  late final LiveRepository _liveRepository = LiveRepository();
+  late final LiveStore _liveStore = LiveStore(
+    widget.store.preferences,
+    widget.store.profile.id,
+  )..load();
   final _changedSources = <String>{};
   final _selectedDramas = <String, Drama>{};
   Timer? _cacheRefreshTimer;
@@ -460,6 +469,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _updater.removeListener(_updateChanged);
     _updater.dispose();
+    _liveRepository.dispose();
+    _liveStore.dispose();
     _cacheRefreshTimer?.cancel();
     widget.repository.catalogUpdates.removeListener(_metadataChanged);
     _generation++;
@@ -831,6 +842,28 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _selectionMode = true);
     } else if (value == 'sources') {
       _manageSources();
+    } else if (value == 'player') {
+      Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => PlayerPickerScreen(store: widget.store),
+        ),
+      );
+    } else if (value == 'live') {
+      Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: const Text('直播')),
+            body: LiveScreen(
+              repository: _liveRepository,
+              store: _liveStore,
+              greenMode: false,
+              onExitLeft: () => Navigator.of(context).maybePop(),
+            ),
+          ),
+        ),
+      );
     } else if (value == 'settings') {
       Navigator.push(
         context,
@@ -1034,6 +1067,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: () => _moreAction('sources'),
                 ),
               PullDownEntry(
+                label: '播放器选择',
+                icon: LucideIcons.clapperboard,
+                dividerBefore:
+                    catalog && !widget.repository.supportsSourceManagement,
+                onPressed: () => _moreAction('player'),
+              ),
+              PullDownEntry(
+                label: '直播入口',
+                icon: LucideIcons.tv,
+                onPressed: () => _moreAction('live'),
+              ),
+              PullDownEntry(
                 label: '用户管理',
                 icon: LucideIcons.users,
                 dividerBefore:
@@ -1228,6 +1273,14 @@ class _HomeScreenState extends State<HomeScreen> {
                               value: 'sources',
                               child: Text('站源管理'),
                             ),
+                          const PopupMenuItem(
+                            value: 'player',
+                            child: Text('播放器选择'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'live',
+                            child: Text('直播入口'),
+                          ),
                           const PopupMenuItem(
                             value: 'users',
                             child: Text('用户管理'),

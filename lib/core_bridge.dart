@@ -214,6 +214,10 @@ abstract class AppRepository {
   });
   // 跨源聚合搜索：并发打所有给定站源，返回按标题/年份/集数归一去重后的结果。
   Future<CatalogPage> searchAcross(List<String> sources, String query);
+  /// 搜索结果增量轮询（西瓜播放器推荐用）。guoapp3 核心无此通道，默认返回空页，
+  /// 调用方以首轮完整结果为准。
+  Future<CatalogPage> searchProgress(String source, String query) async =>
+      CatalogPage(const []);
   Future<CatalogPage> cached(String source, {String category = ''});
   Future<String> cover(Drama drama, {bool force = false});
   Future<DramaDetail> detail(Drama drama);

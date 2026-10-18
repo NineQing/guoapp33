@@ -18,7 +18,7 @@ import 'profiles_screen.dart';
 import 'media_library.dart';
 import 'package_smoke.dart';
 import 'lan_controller.dart';
-import 'player_screen.dart';
+import 'player_picker.dart';
 import 'video_enhancement_assets.dart';
 
 Future<void> main(List<String> arguments) async {
@@ -152,15 +152,14 @@ class _AppBootstrapState extends State<AppBootstrap>
             if (navigation == null) throw StateError('接收设备界面尚未就绪');
             unawaited(
               navigation.pushAndRemoveUntil<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => PlayerScreen(
-                    detail: request.detail,
-                    initialIndex: request.index,
-                    initialPosition: request.position,
-                    repository: repository,
-                    store: store!,
-                    handoff: request,
-                  ),
+                buildPlayerRoute<void>(
+                  navigation.context,
+                  detail: request.detail,
+                  initialIndex: request.index,
+                  initialPosition: request.position,
+                  repository: repository,
+                  store: store!,
+                  handoff: request,
                 ),
                 (route) => route.isFirst,
               ),

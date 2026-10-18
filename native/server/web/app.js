@@ -2288,8 +2288,415 @@ function openCustomSourceEditor(existing) {
   }
 }
 
+/* ---------- 直播（Web 版，仅直播入口，无播放器选择） ---------- */
+
+function liveGet(path, params) {
+  var query = new URLSearchParams(params || {});
+  return fetch('/api/livestream/' + path + '?' + query.toString())
+    .then(function (response) { return response.json(); })
+    .then(function (data) {
+      if (!data.ok) { throw new Error(data.error || '直播请求失败'); }
+      return data.data;
+    });
+}
+
+function livePost(path, payload) {
+  return fetch('/api/livestream/' + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  })
+    .then(function (response) { return response.json(); })
+    .then(function (data) {
+      if (!data.ok) { throw new Error(data.error || '直播请求失败'); }
+      return data.data;
+    });
+}
+
+var liveHlsInstance = null;
+var liveState = {
+  source: '',
+  sources: [],
+  platform: '',
+  platforms: [],
+  channels: [],
+  playing: null,
+  green: false,
+  loading: false,
+  urlIndex: 0,
+  urlList: [],
+};
+
+function liveSourceById(id) {
+  return liveState.sources.filter(function (item) { return item.id === id; })[0];
+}
+
+function liveFavourites() {
+  try {
+    var raw = localStorage.getItem('liveFavourites');
+    return raw ? JSON.parse(raw) : [];
+  } catch (error) { return []; }
+}
+
+function liveFavouriteKey(channel) {
+  return liveState.source + '\u0001' + (channel.group || '') + '\u0001' + channel.name;
+}
+
+function liveIsFavourite(channel) {
+  var key = liveFavouriteKey(channel);
+  return liveFavourites().some(function (item) { return item.key === key; });
+}
+
+function liveToggleFavourite(channel) {
+  var key = liveFavouriteKey(channel);
+  var list = liveFavourites().filter(function (item) { return item.key !== key; });
+  if (!liveIsFavourite(channel)) {
+    list.unshift({
+      key: key, source: liveState.source, group: channel.group || '',
+      name: channel.name, urls: channel.urls || [], logo: channel.logo || '',
+    });
+  }
+  try { localStorage.setItem('liveFavourites', JSON.stringify(list.slice(0, 200))); } catch (error) {}
+}
+
+function liveMountChannel(channel) {
+  var urls = (channel.urls || []).filter(function (item) { return !!item; });
+  if (!urls.length) {
+    showNotice('该频道没有可播线路');
+    return;
+  }
+  liveState.playing = channel;
+  liveStopPlayer();
+  var stage = document.getElementById('live-stage');
+  if (!stage) { return; }
+  var info = document.getElementById('live-title');
+  if (info) {
+    info.innerHTML = '<b>' + escapeHTML(channel.name) + '</b>' +
+      (channel.group ? '<span class="live-group">' + escapeHTML(channel.group) + '</span>' : '') +
+      ' <button type="button" class="btn mini" id="live-fav">' +
+      (liveIsFavourite(channel) ? '★ 已收藏' : '☆ 收藏') + '</button>';
+    var favButton = document.getElementById('live-fav');
+    if (favButton) {
+      favButton.addEventListener('click', function () {
+        liveToggleFavourite(channel);
+        liveMountChannel.channel ? null : null;
+        var list = liveFavourites().filter(function (item) { return item.key === liveFavouriteKey(channel); });
+        favButton.textContent = list.length ? '★ 已收藏' : '☆ 收藏';
+        var panel = document.getElementById('live-panel-body');
+        if (panel) { renderLivePanel(); }
+      });
+    }
+  }
+  var video = document.createElement('video');
+  video.id = 'live-player';
+  video.controls = true;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.muted = true;
+  stage.appendChild(video);
+  var first = urls[0];
+  var target = /^(https?|rtp|udp):\/\//i.test(first)
+    ? '/api/livestream/stream?source=' + encodeURIComponent(liveState.source) +
+      '&url=' + encodeURIComponent(first)
+    : first;
+  var isHls = /\.m3u8($|\?)/i.test(first) || /^\/api\/livestream\/stream/i.test(target);
+  if (isHls && window.Hls && window.Hls.isSupported()) {
+    liveHlsInstance = new window.Hls({ lowLatencyMode: false, enableWorker: true });
+    liveHlsInstance.on(window.Hls.Events.ERROR, function (event, data) {
+      if (!data || !data.fatal) { return; }
+      if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+        liveHlsInstance.recoverMediaError();
+        return;
+      }
+      if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+        showNotice('线路 ' + (urls.indexOf(currentLiveUrl()) + 1) + ' 异常，尝试下一条…');
+        liveSwitchRoute(urls, urls.indexOf(currentLiveUrl()) + 1);
+      }
+    });
+    liveHlsInstance.loadSource(target);
+    liveHlsInstance.attachMedia(video);
+    liveState.urlIndex = 0;
+    liveState.urlList = urls;
+  } else if (first.indexOf('rtmp') === 0 || first.indexOf('rtsp') === 0) {
+    stage.innerHTML = '<div class="live-unsupported">该线路是 ' +
+      escapeHTML(first.split('://')[0]) + ' 协议，浏览器无法直接播放，请选择 http(s) 线路。</div>';
+    return;
+  } else {
+    video.src = target;
+    liveState.urlIndex = 0;
+    liveState.urlList = urls;
+  }
+  video.play().catch(function () {});
+}
+
+function currentLiveUrl() {
+  return (liveState.urlList || [])[liveState.urlIndex || 0] || '';
+}
+
+function liveSwitchRoute(urls, index) {
+  if (index >= urls.length) {
+    showNotice('全部线路都无法播放');
+    liveStopPlayer();
+    return;
+  }
+  var channel = {
+    name: liveState.playing ? liveState.playing.name : '',
+    group: liveState.playing ? liveState.playing.group : '',
+    urls: [urls[index]],
+  };
+  var previous = liveState.urlIndex;
+  liveState.urlIndex = index;
+  var video = document.getElementById('live-player');
+  var target = '/api/livestream/stream?source=' + encodeURIComponent(liveState.source) +
+    '&url=' + encodeURIComponent(urls[index]);
+  if (video) {
+    if (liveHlsInstance) {
+      liveHlsInstance.destroy();
+      liveHlsInstance = null;
+    }
+    if (window.Hls && window.Hls.isSupported()) {
+      liveHlsInstance = new window.Hls({ enableWorker: true });
+      liveHlsInstance.on(window.Hls.Events.ERROR, function (event, data) {
+        if (!data || !data.fatal) { return; }
+        if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+          liveSwitchRoute(urls, liveState.urlIndex + 1);
+        }
+      });
+      liveHlsInstance.loadSource(target);
+      liveHlsInstance.attachMedia(video);
+    } else {
+      video.src = target;
+    }
+    video.play().catch(function () {});
+  }
+}
+
+function liveStopPlayer() {
+  if (liveHlsInstance) {
+    liveHlsInstance.destroy();
+    liveHlsInstance = null;
+  }
+  var stage = document.getElementById('live-stage');
+  if (stage) {
+    var video = document.getElementById('live-player');
+    if (video) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      video.remove();
+    }
+  }
+}
+
+function liveSourceHTML() {
+  if (liveState.loading) { return '<div class="loading">正在加载直播源…</div>'; }
+  if (!liveState.sources.length) {
+    return '<div class="empty">当前没有可用直播源，可在下方添加自定义直播源。</div>';
+  }
+  return '';
+}
+
+function renderLivePanel() {
+  var panel = document.getElementById('live-panel-body');
+  if (!panel) { return; }
+  var sources = liveState.sources.map(function (item) {
+    return '<button type="button" class="btn mini live-source' +
+      (item.id === liveState.source ? ' active' : '') + '" data-id="' + escapeHTML(item.id) + '">' +
+      escapeHTML(item.name) + '</button>';
+  }).join('');
+  var favourites = liveFavourites();
+  var groups = {};
+  liveState.channels.forEach(function (channel) {
+    var key = channel.group || '其他';
+    if (!groups[key]) { groups[key] = []; }
+    groups[key].push(channel);
+  });
+  var groupHTML = Object.keys(groups).map(function (key) {
+    return '<div class="live-group-head">' + escapeHTML(key) +
+      ' <span class="live-count">' + groups[key].length + '</span></div>' +
+      groups[key].map(function (channel) {
+        return '<button type="button" class="live-channel' +
+          (liveState.playing && liveState.playing.name === channel.name &&
+            liveState.playing.group === channel.group ? ' active' : '') +
+          '" data-group="' + escapeHTML(channel.group || '') +
+          '" data-name="' + escapeHTML(channel.name) + '">' +
+          escapeHTML(channel.name) + '</button>';
+      }).join('');
+  }).join('');
+  var favHTML = favourites.length
+    ? '<div class="live-group-head">★ 收藏</div>' + favourites.map(function (item) {
+        return '<button type="button" class="live-channel live-fav" data-key="' +
+          escapeHTML(item.key) + '">' + escapeHTML(item.name) + '</button>';
+      }).join('')
+    : '';
+  var platformHTML = liveState.platforms.length
+    ? '<div class="live-platforms">' + liveState.platforms.map(function (item) {
+        return '<button type="button" class="btn mini live-platform' +
+          (item.id === liveState.platform ? ' active' : '') + '" data-id="' +
+          escapeHTML(item.id) + '" data-endpoint="' + escapeHTML(item.endpoint || '') +
+          '" data-name="' + escapeHTML(item.name) + '">' +
+          escapeHTML(item.name) + ' <span class="live-count">' + (item.count || 0) + '</span></button>';
+      }).join('') + '</div>'
+    : '';
+  panel.innerHTML =
+    '<div class="live-sources">' + sources + '</div>' +
+    platformHTML +
+    '<div class="live-custom-form"><input id="live-custom-name" placeholder="直播源名称" />' +
+    '<input id="live-custom-url" placeholder="m3u / txt 直链" />' +
+    '<button type="button" class="btn" id="live-custom-add">添加</button>' +
+    '<span id="live-custom-status"></span></div>' +
+    (favHTML ? '<div class="live-list">' + favHTML + '</div>' : '') +
+    '<div class="live-list">' + (groupHTML || '<div class="empty">' +
+      (liveState.channels.length ? '' : '频道未加载，先选择上方直播源。') + '</div>') + '</div>';
+  Array.prototype.forEach.call(panel.querySelectorAll('.live-source'), function (button) {
+    button.addEventListener('click', function () { liveSelectSource(button.getAttribute('data-id')); });
+  });
+  Array.prototype.forEach.call(panel.querySelectorAll('.live-platform'), function (button) {
+    button.addEventListener('click', function () {
+      liveSelectPlatform({
+        id: button.getAttribute('data-id'),
+        endpoint: button.getAttribute('data-endpoint'),
+        name: button.getAttribute('data-name'),
+      });
+    });
+  });
+  Array.prototype.forEach.call(panel.querySelectorAll('.live-channel'), function (button) {
+    button.addEventListener('click', function () {
+      if (button.classList.contains('live-fav')) {
+        var key = button.getAttribute('data-key');
+        var item = liveFavourites().filter(function (entry) { return entry.key === key; })[0];
+        if (!item) { return; }
+        if (item.source !== liveState.source) {
+          liveSelectSource(item.source, function () { liveMountChannel(item); });
+        } else {
+          liveMountChannel(item);
+        }
+        return;
+      }
+      var name = button.getAttribute('data-name');
+      var group = button.getAttribute('data-group');
+      var channel = liveState.channels.filter(function (item) {
+        return item.name === name && (item.group || '') === (group || '');
+      })[0];
+      if (channel) { liveMountChannel(channel); }
+    });
+  });
+  var addButton = document.getElementById('live-custom-add');
+  var status = document.getElementById('live-custom-status');
+  if (addButton) {
+    addButton.addEventListener('click', function () {
+      var name = document.getElementById('live-custom-name').value.trim();
+      var endpoint = document.getElementById('live-custom-url').value.trim();
+      if (!name || !endpoint) {
+        status.textContent = '请填写名称与直链';
+        return;
+      }
+      addButton.disabled = true;
+      status.textContent = '';
+      livePost('custom-sources', { action: 'save', name: name, endpoint: endpoint })
+        .then(function () { return liveLoadSources(); })
+        .then(function () { status.textContent = '已添加'; })
+        .catch(function (error) { status.textContent = error.message || '添加失败'; })
+        .then(function () { addButton.disabled = false; });
+    });
+  }
+}
+
+function liveLoadSources() {
+  liveState.loading = true;
+  return liveGet('sources', { green: liveState.green ? '1' : '0' })
+    .then(function (list) {
+      liveState.sources = list || [];
+      liveState.loading = false;
+      if (!liveState.source && list.length) { liveState.source = list[0].id; }
+      return list;
+    })
+    .catch(function (error) {
+      liveState.loading = false;
+      throw error;
+    });
+}
+
+function liveSourceById(id) {
+  return liveState.sources.filter(function (item) { return item.id === id; })[0];
+}
+
+function liveSelectSource(id, done) {
+  liveState.source = id;
+  liveState.channels = [];
+  liveState.platforms = [];
+  liveState.platform = '';
+  liveState.playing = null;
+  var source = liveSourceById(id) || {};
+  renderLivePanel();
+  if (source.protocol === 'pingtai') {
+    liveGet('platforms', { source: id })
+      .then(function (list) {
+        liveState.platforms = list || [];
+        renderLivePanel();
+        if (done) { done(); }
+      })
+      .catch(function (error) {
+        showNotice(error.message || '分类加载失败');
+      });
+    return;
+  }
+  liveGet('channels', { source: id, green: liveState.green ? '1' : '0' })
+    .then(function (list) {
+      liveState.channels = list || [];
+      renderLivePanel();
+      if (done) { done(); }
+    })
+    .catch(function (error) {
+      showNotice(error.message || '频道加载失败');
+    });
+}
+
+function liveSelectPlatform(platform, done) {
+  liveGet('channels', {
+    source: liveState.source,
+    platform: platform.id,
+    endpoint: platform.endpoint || '',
+    group: platform.name || '',
+    green: liveState.green ? '1' : '0',
+  })
+    .then(function (list) {
+      liveState.platform = platform.id;
+      liveState.channels = list || [];
+      renderLivePanel();
+      if (done) { done(); }
+    })
+    .catch(function (error) {
+      showNotice(error.message || '频道加载失败');
+    });
+}
+
+function renderLiveView() {
+  view.innerHTML =
+    '<div class="live-wrap">' +
+    '<div class="live-stage" id="live-stage"><div class="live-idle">选择频道开始观看</div></div>' +
+    '<div class="live-title" id="live-title"></div>' +
+    '<div class="live-panel"><div id="live-panel-body"></div></div>' +
+    '</div>';
+  return liveLoadSources().then(function (list) {
+    if (list.length && !liveState.source) { liveState.source = list[0].id; }
+    renderLivePanel();
+    if (liveState.source) {
+      return liveSelectSource(liveState.source);
+    }
+  }).catch(function (error) {
+    var panel = document.getElementById('live-panel-body');
+    if (panel) { panel.innerHTML = '<div class="empty">' + escapeHTML(error.message || '直播加载失败') + '</div>'; }
+  });
+}
+
 function render() {
   cancelAutoNext();
+  // 路由离开直播页时停掉直播播放器，避免后台继续拉流。
+  if (location.hash.indexOf('#/live') !== 0 && liveHlsInstance) {
+    liveStopPlayer();
+    liveState.playing = null;
+  }
   var current = hashParams();
   var params = current.params;
   state.source = params.get('source') || state.source;
@@ -2332,6 +2739,8 @@ function render() {
     task = renderSourceVisibility();
   } else if (current.path === 'settings') {
     task = Promise.resolve().then(renderSettings);
+  } else if (current.path === 'live') {
+    task = Promise.resolve().then(renderLiveView);
   } else {
     state.category = params.get('category') || '';
     state.page = Number(params.get('page') || 1);
@@ -2340,6 +2749,10 @@ function render() {
   var settingsButton = document.getElementById('settings-btn');
   if (settingsButton) {
     settingsButton.classList.toggle('active', current.path === 'settings');
+  }
+  var liveButton = document.getElementById('live-btn');
+  if (liveButton) {
+    liveButton.classList.toggle('active', current.path === 'live');
   }
   task.catch(function (error) {
     view.innerHTML = '<div class="empty">' + escapeHTML(error.message || '加载失败') + '</div>';
