@@ -24,6 +24,9 @@ class LocalSnapshot {
     'downloadPreferences',
     'catalogView',
     'recentSearches',
+    // 观看统计（xigua 播放器移植新增，每用户），必须列入受管字段，
+    // 否则记录播放进度会被 commit 判为「无效的本地配置字段」。
+    'watchStats',
     'lanRecords',
     'lanSettings',
     'lanReceipts',
@@ -39,6 +42,9 @@ class LocalSnapshot {
     // 自定义源是设备级配置，所有本地用户共用，必须在受管字段内，
     // 否则保存自定义源会被判为“无效的本地配置字段”。
     'customSources',
+    // 播放器偏好（guo / xigua，设备级）必须列入受管字段，
+    // 否则「播放器选择」点击立即生效会被 commit 判为「无效的本地配置字段」。
+    'player',
   };
   final SharedPreferences preferences;
   Map<String, Object> _values = {};
@@ -47,7 +53,7 @@ class LocalSnapshot {
       globalKeys.contains(key) ||
       libraryKeys.contains(key) ||
       RegExp(
-        r'^profile\.[a-zA-Z0-9_-]{1,64}\.(history|favorites|followStates|seriesCandidates|mediaHistory|source|hideVip|hiddenSites|playback|downloadPreferences|catalogView|recentSearches|lanRecords|lanSettings|lanReceipts)$',
+        r'^profile\.[a-zA-Z0-9_-]{1,64}\.(history|favorites|followStates|seriesCandidates|mediaHistory|source|hideVip|hiddenSites|playback|downloadPreferences|catalogView|recentSearches|watchStats|lanRecords|lanSettings|lanReceipts)$',
       ).hasMatch(key);
 
   Map<String, Object> get values => Map.of(_values);

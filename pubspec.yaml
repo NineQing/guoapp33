@@ -1,7 +1,7 @@
 name: duanju_app
 description: 独立运行的多端短剧应用
 publish_to: none
-version: 1.4.0+88
+version: 1.4.1+89
 
 environment:
   sdk: '>=3.12.0 <4.0.0'
@@ -38,6 +38,9 @@ dev_dependencies:
 dependency_overrides:
   media_kit_libs_windows_video:
     path: packages/media_kit_libs_windows_video
+  # 锁定 Android 端实现为传统 Pigeon（BasicMessageChannel）稳定版，避免 jnigen/JNI
+  # interop 版本漂移导致启动期 NoSuchMethodError（SharedPreferencesApiRegistrar.getAll）。
+  shared_preferences_android: 2.4.28
 
 flutter:
   config:

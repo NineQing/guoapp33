@@ -973,7 +973,9 @@ func handleLivestreamStream(writer http.ResponseWriter, request *http.Request) {
 	}
 	source, _ := findLiveSource(request.URL.Query().Get("source"))
 	headers := copyHeader(source.Headers)
-	client := &http.Client{Transport: localTransport, Timeout: liveRequestTimeout}
+	// 直播流是长连接：不能用整请求超时的 http.Client.Timeout（会把持续拉流
+	// 的 HLS / flv 在 14 秒后截断），只保留 localTransport 的 15 秒拨号/建连上限。
+	client := &http.Client{Transport: localTransport}
 	upstream, err := http.NewRequest(http.MethodGet, target.String(), nil)
 	if err != nil {
 		http.Error(writer, "直播地址无效", http.StatusBadRequest)
