@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -9,13 +10,11 @@ import 'package:media_kit/media_kit.dart';
 
 const _viewType = 'duanju/video_surface';
 
-// 自定义 Android SurfaceView（viewType 'duanju/video_surface'）需要原生侧
-// （MainActivity / 插件）注册 onAddView 工厂并回传 wid；该原生半边尚未移植。
-// 若强行走它，mpv 音频正常但 vo:gpu+wid 渲染目标缺失，表现为「有声无画」。
-// 因此 Android 上回退到 media_kit 标准 texture 渲染（Video + VideoController），
-// 与 guo 内置播放器同源、已验证可用。将来补齐原生 surface 工厂后改回
-// `!kIsWeb && Platform.isAndroid` 即可启用硬件 SurfaceView 渲染。
-bool get androidSurfaceViewSupported => false;
+// 自定义 Android SurfaceView（viewType 'duanju/video_surface'）由原生侧
+// VideoSurfaceHost.kt（MainActivity 注册 VideoSurfacePlugin）提供 onAddView
+// 工厂并经 MediaKitAndroidHelper 回传 wid，使 mpv vo:gpu+wid 渲染接上。
+// 走该路径可启用硬件 SurfaceView 渲染；失败时 onUnavailable 会回退 texture。
+bool get androidSurfaceViewSupported => !kIsWeb && Platform.isAndroid;
 
 class VideoSurfaceHost extends StatefulWidget {
   const VideoSurfaceHost({

@@ -2,9 +2,11 @@
 
 自编译版加入 韩小圈，鬼片，A123（青空已下线移除）
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.2+91（未验证开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.2+92（未验证开发快照）**。
 
-本轮（1.4.2+91）两项：本地 Web 服务器版直播模块改造（播放器换 ArtPlayer + 界面重排 + 取消线路源）与全端直播播放消除 mpv「非可寻址」提示。
+本轮（1.4.2+92）修复：Android 端切换 xigua 播放器「有声无画」。根因定位（对照源项目 guoappzhi）：xigua 在 Android 走自定义平台视图 `duanju/video_surface`，其原生半边 `android/app/src/main/kotlin/com/duanju/duanju_app/VideoSurfaceHost.kt`（注册 `onAddView` 工厂、经 `MediaKitAndroidHelper.newGlobalObjectRef` 回传 wid 给 Dart）移植时漏掉了，故 mpv `vo:gpu+wid` 渲染目标接不上。修复：补齐 `VideoSurfaceHost.kt`、在 `MainActivity.configureFlutterEngine` 加 `flutterEngine.plugins.add(VideoSurfacePlugin())`，并把 `lib/xigua/android_video_surface.dart` 的 `androidSurfaceViewSupported` 恢复为 `!kIsWeb && Platform.isAndroid`（重加 `dart:io`）以启用硬件 SurfaceView；Dart 侧原有 `onUnavailable → _fallbackToTextureOutput` 兜底保留，原生 surface 异常时自动退回 texture。
+
+上一轮（1.4.2+91）两项：本地 Web 服务器版直播模块改造（播放器换 ArtPlayer + 界面重排 + 取消线路源）与全端直播播放消除 mpv「非可寻址」提示。
 
 1. 本地 Web 服务器版直播模块（`native/server/web/artplayer.js`、`index.html`、`app.js`、`app.css`）。一、播放器换成 ArtPlayer v5.4.0：新增 `artplayer.js`（自带 UI 与样式、自注入 CSS，无需外链），`index.html` 在 `hls.min.js` 之后引入；`liveEnsureArtplayer` 在舞台容器 `#live-artplayer` 上建 `new Artplayer({ isLive: true, ... })`，`liveVideoElement` 取 ArtPlayer 的 `.video` 元素；直播流仍按原策略走——m3u8 / 经 `/api/livestream/stream` 代理的流用 hls.js 挂到该 video 元素，直连 http(s) 则设 `video.src`，rtmp/rtsp 提示不支持；路线切换失败自动顺延下一条。二、界面重排：上方为播放器；下方左「秀果分类」列（卡哇伊/咪狐等，单列上下滚动，`live-col-platforms`）+ 右「播放列表」列（单列上下滚动，`live-col-channels`），两列均纵向滚动滑块；`renderLivePlatforms` 取代原线路源面板，**取消线路源（多线路）显示**，播放按频道自动选第一可用线；绿色模式、自定义源、收藏保留。路由离开直播页时 `liveReleaseArtplayer` 一并销毁 ArtPlayer 与 hls.js 实例，避免后台拉流。
 
