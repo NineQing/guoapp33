@@ -90,6 +90,17 @@ class LivePlaybackController extends ChangeNotifier {
     if (_player != null || _disposed) return;
     final player = Player();
     _player = player;
+    // 直播流对 mpv 是非可寻址（non-seekable）源，demuxer 打开时会在 OSD/日志里
+    // 打印 “not seekable … you can force it with -force -seekable=yes”。设为 yes
+    // 后 mpv 用缓存强行可寻址，既消除该提示也支持直播内拖动。仅原生 mpv 生效，
+    // Web 端 platform 非 NativePlayer 时跳过。
+    final platform = player.platform;
+    if (platform is NativePlayer) {
+      unawaited(
+        platform.setProperty('force-seekable', 'yes', waitForInitialization: true)
+            .catchError((Object _) {}),
+      );
+    }
     _controller = VideoController(player);
     _subscriptions.add(player.stream.error.listen(_onError));
     _subscriptions.add(

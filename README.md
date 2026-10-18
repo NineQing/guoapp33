@@ -2,9 +2,17 @@
 
 自编译版加入 韩小圈，鬼片，A123（青空已下线移除）
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.1+90（未验证开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.2+91（未验证开发快照）**。
 
-本轮（1.4.1+90）修复：Android 端切换 xigua 播放器后播放「有声无画」。根因：xigua 在 Android 上走自定义平台视图 `duanju/video_surface`（`lib/xigua/android_video_surface.dart` 的 `VideoSurfaceHost`），该 viewType 需原生侧（`MainActivity` / 插件）注册 `onAddView` 工厂并回传 `wid`，但移植时只带了 Dart 半边、原生注册缺失，导致 mpv 的 `vo:gpu + wid` 渲染目标接不上，音频正常而视频无画面。修复：把 `androidSurfaceViewSupported` 改为恒 `false`，让 xigua 在 Android 上回退到 media_kit 标准 texture 渲染（`Video` + `VideoController`，与 guo 内置播放器同源、已验证可用），待将来补齐原生 surface 工厂后再切回硬件 SurfaceView；同时移除因不再使用 `Platform` 而失效的 `dart:io` 导入。
+本轮（1.4.2+91）两项：本地 Web 服务器版直播模块改造（播放器换 ArtPlayer + 界面重排 + 取消线路源）与全端直播播放消除 mpv「非可寻址」提示。
+
+1. 本地 Web 服务器版直播模块（`native/server/web/artplayer.js`、`index.html`、`app.js`、`app.css`）。一、播放器换成 ArtPlayer v5.4.0：新增 `artplayer.js`（自带 UI 与样式、自注入 CSS，无需外链），`index.html` 在 `hls.min.js` 之后引入；`liveEnsureArtplayer` 在舞台容器 `#live-artplayer` 上建 `new Artplayer({ isLive: true, ... })`，`liveVideoElement` 取 ArtPlayer 的 `.video` 元素；直播流仍按原策略走——m3u8 / 经 `/api/livestream/stream` 代理的流用 hls.js 挂到该 video 元素，直连 http(s) 则设 `video.src`，rtmp/rtsp 提示不支持；路线切换失败自动顺延下一条。二、界面重排：上方为播放器；下方左「秀果分类」列（卡哇伊/咪狐等，单列上下滚动，`live-col-platforms`）+ 右「播放列表」列（单列上下滚动，`live-col-channels`），两列均纵向滚动滑块；`renderLivePlatforms` 取代原线路源面板，**取消线路源（多线路）显示**，播放按频道自动选第一可用线；绿色模式、自定义源、收藏保留。路由离开直播页时 `liveReleaseArtplayer` 一并销毁 ArtPlayer 与 hls.js 实例，避免后台拉流。
+
+2. 全端直播播放消除 mpv「non-seekable … you can force it with -force -seekable=yes」提示（`lib/live_playback.dart`，作用于 Android/Windows/macOS/iOS 四端的 App 直播播放器）。根因：直播流对 mpv 是非可寻址源，demuxer 打开时打印该提示。修复：`_ensurePlayer` 建好 `Player()` 后，若 `player.platform` 为 `NativePlayer` 则 `setProperty('force-seekable','yes')`，mpv 用缓存强行可寻址，既消除提示也支持直播内拖动；Web 端 platform 非 NativePlayer 时自动跳过。
+
+验证：Web 前端 `node --check native/server/web/app.js` 通过（ArtPlayer / hls.js 均在浏览器内运行，需浏览器验收）；Dart 侧本机无 flutter/dart CLI，`flutter analyze` 与测试交 GitHub Actions，四端直播画面与无提示表现待真机 / 设备验收；按约定本轮为未验证开发快照。
+
+上一轮（1.4.1+90）修复：Android 端切换 xigua 播放器后播放「有声无画」。根因：xigua 在 Android 上走自定义平台视图 `duanju/video_surface`（`lib/xigua/android_video_surface.dart` 的 `VideoSurfaceHost`），该 viewType 需原生侧（`MainActivity` / 插件）注册 `onAddView` 工厂并回传 `wid`，但移植时只带了 Dart 半边、原生注册缺失，导致 mpv 的 `vo:gpu + wid` 渲染目标接不上，音频正常而视频无画面。修复：把 `androidSurfaceViewSupported` 改为恒 `false`，让 xigua 在 Android 上回退到 media_kit 标准 texture 渲染（`Video` + `VideoController`，与 guo 内置播放器同源、已验证可用），待将来补齐原生 surface 工厂后再切回硬件 SurfaceView；同时移除因不再使用 `Platform` 而失效的 `dart:io` 导入。
 
 上一轮（1.4.1+89）三项修复：Android 端启动崩溃、Windows 端 xigua 播放器选择无反应、本地 Web 服务器版直播板块布局与内容加载。
 

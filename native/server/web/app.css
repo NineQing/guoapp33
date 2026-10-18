@@ -231,17 +231,31 @@ body {
   background: var(--panel-2); overflow: hidden;
 }
 .progress span { display: block; height: 100%; background: var(--accent); }
-/* ---- 直播视图（播放器在上；下方左列播放列表、右列线路源） ---- */
+/* ---- 直播视图（ArtPlayer 播放器在上；下方左列「秀果分类」、右列「播放列表」，均单列上下滚动；已取消线路源列） ---- */
 .live-wrap { max-width: 1000px; margin: 0 auto; }
 .live-stage {
-  background: #000; border-radius: 10px; overflow: hidden;
-  aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center;
+  position: relative; background: #000; border-radius: 10px; overflow: hidden;
+  aspect-ratio: 16 / 9;
 }
-.live-stage video { width: 100%; height: 100%; display: block; background: #000; }
-.live-idle, .live-unsupported {
-  color: var(--muted); font-size: 14px; padding: 20px; text-align: center;
+/* ArtPlayer 占满舞台；其内部 .art-video-player 自适应容器。 */
+.live-stage #live-artplayer { position: absolute; inset: 0; }
+.live-stage #live-artplayer .art-video-player {
+  width: 100%; height: 100%; background: #000; border-radius: 0;
 }
-.live-unsupported { color: #ff8b90; }
+.live-stage #live-artplayer .art-video {
+  width: 100%; height: 100%; object-fit: contain; background: #000;
+}
+/* 未选频道前的占位提示；选中频道播放时由 JS 隐藏。 */
+.live-idle {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 14px; pointer-events: none;
+}
+.live-unsupported {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  color: #ff8b90; font-size: 14px; text-align: center; padding: 20px;
+}
 .live-title {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   font-size: 15px; margin: 10px 0; min-height: 24px;
@@ -258,10 +272,9 @@ body {
   display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
   padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line);
 }
-.live-sources, .live-platforms {
-  display: flex; gap: 8px; flex-wrap: wrap;
+.live-sources {
+  display: flex; gap: 8px; flex-wrap: wrap; flex: 1 1 auto;
 }
-.live-sources { flex: 1 1 auto; }
 .live-empty-inline { font-size: 12px; color: var(--muted); }
 .btn.mini { padding: 4px 10px; font-size: 12px; border-radius: 999px; }
 .live-green {
@@ -280,18 +293,20 @@ body {
   padding: 6px 10px; font-size: 13px;
 }
 .live-custom-form span { font-size: 12px; color: var(--muted); }
+/* 下方两列：左「秀果分类」、右「播放列表」，均为单列 + 上下滚动。 */
 .live-columns {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  display: grid; grid-template-columns: 220px 1fr; gap: 12px;
+  align-items: start;
 }
 .live-col {
   border: 1px solid var(--line); border-radius: 8px;
   background: var(--panel-2); overflow: hidden;
   display: flex; flex-direction: column;
+  min-height: 360px;
 }
-.live-col-channels { min-height: 320px; }
-.live-col-routes { min-height: 320px; }
-.live-channel-scroll, .live-routes-scroll {
-  overflow-y: auto; max-height: 440px; flex: 1 1 auto;
+.live-col-platforms { max-width: 220px; }
+.live-platform-scroll, .live-channel-scroll {
+  overflow-y: auto; max-height: 440px; min-height: 0; flex: 1 1 auto;
 }
 .live-group-head {
   position: sticky; top: 0; z-index: 1;
@@ -314,31 +329,7 @@ body {
 .live-channel.active .live-count { color: rgba(255,255,255,0.85); opacity: 1; }
 .live-channel.live-fav .live-name::before { content: "★ "; color: #f5b83d; }
 .live-channel.live-fav.active .live-name::before { color: #fff; }
-.live-routes-body, .live-route {
-  display: block;
-}
-.live-route {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 10px; border-bottom: 1px solid rgba(42, 47, 58, 0.4);
-}
-.live-route.active { background: rgba(255, 90, 95, 0.12); }
-.live-route-play {
-  flex: 0 0 auto; padding: 3px 9px; font-size: 12px; border-radius: 6px;
-  background: var(--panel); border: 1px solid var(--line); color: var(--text); cursor: pointer;
-}
-.live-route.active .live-route-play { background: var(--accent); border-color: var(--accent); color: #fff; }
-.live-route-url {
-  flex: 1 1 auto; min-width: 0;
-  font-size: 11px; color: var(--muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-.live-route-copy {
-  flex: 0 0 auto; padding: 3px 8px; font-size: 12px; border-radius: 6px;
-  background: var(--panel); border: 1px solid var(--line); color: var(--muted); cursor: pointer;
-}
-.live-route-copy:hover { border-color: var(--accent); color: #fff; }
 @media (max-width: 720px) {
   .live-columns { grid-template-columns: 1fr; }
-  .live-col-channels, .live-col-routes { min-height: 0; }
+  .live-col-platforms, .live-col-channels { max-width: none; min-height: 240px; }
 }
