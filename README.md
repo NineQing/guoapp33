@@ -2,9 +2,11 @@
 
 自编译版加入 韩小圈，鬼片，A123（青空已下线移除）
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.1+89（未验证开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.1+90（未验证开发快照）**。
 
-本轮（1.4.1+89）三项修复：Android 端启动崩溃、Windows 端 xigua 播放器选择无反应、本地 Web 服务器版直播板块布局与内容加载。
+本轮（1.4.1+90）修复：Android 端切换 xigua 播放器后播放「有声无画」。根因：xigua 在 Android 上走自定义平台视图 `duanju/video_surface`（`lib/xigua/android_video_surface.dart` 的 `VideoSurfaceHost`），该 viewType 需原生侧（`MainActivity` / 插件）注册 `onAddView` 工厂并回传 `wid`，但移植时只带了 Dart 半边、原生注册缺失，导致 mpv 的 `vo:gpu + wid` 渲染目标接不上，音频正常而视频无画面。修复：把 `androidSurfaceViewSupported` 改为恒 `false`，让 xigua 在 Android 上回退到 media_kit 标准 texture 渲染（`Video` + `VideoController`，与 guo 内置播放器同源、已验证可用），待将来补齐原生 surface 工厂后再切回硬件 SurfaceView；同时移除因不再使用 `Platform` 而失效的 `dart:io` 导入。
+
+上一轮（1.4.1+89）三项修复：Android 端启动崩溃、Windows 端 xigua 播放器选择无反应、本地 Web 服务器版直播板块布局与内容加载。
 
 1. Android 启动崩溃（`pubspec.yaml`、`pubspec.lock`）。现象为打开应用即 `java.lang.NoSuchMethodError: no non-static method "Lio/flutter/plugins/sharedpreferences/SharedPreferencesApiRegistrar;.getAll(Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;"`，无法载入应用。根因：`pubspec.lock` 锁到 `shared_preferences_android: 2.5.0`，该版本改用 jnigen/JNI interop（`SharedPreferencesApiRegistrar.getAll(String, List, Continuation)`），与 APK 内既有的传统 Pigeon 原生插件签名漂移，启动期取偏好即命中未编译进来的 JNI 方法。修复：在 `dependency_overrides` 里把 `shared_preferences_android` 锁定到 2.4.28（传统 Pigeon `BasicMessageChannel` 实现，与 Dart 侧 `shared_preferences` 2.5.6 的 `^2.3.4` 约束自洽），并同步更新 `pubspec.lock` 的 sha256 与 `dependency: "direct overridden"` 标记。需 `flutter clean && flutter pub get` 重新构建安装，旧 APK 内嵌插件不会自动更新。
 2. Windows 端 xigua 播放器选择无反应（`lib/local_snapshot.dart`）。现象为「播放器选择」页选 xigua 点「立即生效」无任何反馈、不持久化、不返回。根因：`LocalStore.setPlayer` 经 `_setting('player', ...)` 落到 `LocalSnapshot.commit`，而 `player` 未列入受管字段白名单 `LocalSnapshot.owns()`，`commit` 抛 `StateError('无效的本地配置字段')`，选择页的 `await` 因此 reject、`Navigator.pop()` 未执行。修复：把设备级 `player` 加入 `globalKeys`；同时把上一轮 xigua 移植新增、同样遗漏的每用户 `watchStats`（观看统计）加入 `libraryKeys` 与 `owns()` 的每用户正则在播放进度落盘时不再抛错。
