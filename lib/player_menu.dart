@@ -5,10 +5,18 @@ import 'package:flutter/material.dart';
 import 'models.dart';
 import 'episode_browser.dart';
 import 'playback_preferences.dart';
+import 'picture_quality_ui.dart';
 import 'video_enhancement.dart';
 import 'video_enhancement_settings.dart';
 
-enum PlayerMenuSection { episodes, speed, quality, route, settings }
+enum PlayerMenuSection {
+  episodes,
+  speed,
+  quality,
+  route,
+  pictureQuality,
+  settings
+}
 
 class PlayerMenu extends StatefulWidget {
   const PlayerMenu({
@@ -91,6 +99,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
       PlayerMenuSection.speed => '播放倍速',
       PlayerMenuSection.quality => '清晰度',
       PlayerMenuSection.route => '播放线路',
+      PlayerMenuSection.pictureQuality => '画质档',
       PlayerMenuSection.settings => '播放设置',
     };
     return Dialog(
@@ -257,6 +266,19 @@ class _PlayerMenuState extends State<PlayerMenu> {
                       : (_) => widget.onRoute!(index),
                 ),
             ],
+          ),
+          const SizedBox(height: 20),
+        ],
+        if (all || widget.section == PlayerMenuSection.pictureQuality) ...[
+          PictureQualityPanel(
+            key: const ValueKey('menu-picture-quality'),
+            value: preferences.pictureQuality,
+            busy: _busy,
+            onChanged: (next) => _run(
+              () => widget.onPreferences(
+                preferences.copyWith(pictureQuality: next),
+              ),
+            ),
           ),
           const SizedBox(height: 20),
         ],

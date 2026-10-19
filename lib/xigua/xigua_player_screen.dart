@@ -41,6 +41,7 @@ import 'package:duanju_app/sources_screen.dart';
 import 'package:duanju_app/lan_controller.dart';
 import 'package:duanju_app/lan_screen.dart';
 import 'package:duanju_app/video_enhancement.dart';
+import 'package:duanju_app/picture_quality_applier.dart';
 import 'package:duanju_app/video_output_size.dart';
 import 'package:duanju_app/sleep_timer.dart';
 import 'package:duanju_app/watch_session.dart';
@@ -88,6 +89,7 @@ class _PlayerScreenState extends State<XiguaPlayerScreen>
   final _videoSurfaceRelease = Completer<void>();
   bool _videoSurfaceReleaseSignaled = false;
   late final VideoEnhancementController _enhancement;
+  late final PictureQualityApplier _pictureQuality;
   late final PlaybackLoader _loader;
   late final PlaybackPreloader _preloader;
   bool _preloadEnabled = true;
@@ -296,6 +298,8 @@ class _PlayerScreenState extends State<XiguaPlayerScreen>
       category: widget.detail.drama.category,
       tags: widget.detail.drama.tags,
     );
+    _pictureQuality = PictureQualityApplier(_player)
+      ..apply(preferences.pictureQuality);
     _interactions = PlayerInteractions(
       player: _player,
       available: () =>
@@ -1458,6 +1462,7 @@ class _PlayerScreenState extends State<XiguaPlayerScreen>
       return;
     final qualityChanged = nextPreferences.quality != _requestedQuality;
     _enhancement.setPreferences(nextPreferences.enhancement);
+    unawaited(_pictureQuality.apply(nextPreferences.pictureQuality));
     setState(() {
       _speed = nextPreferences.speed;
       _requestedQuality = nextPreferences.quality;
@@ -1760,6 +1765,7 @@ class _PlayerScreenState extends State<XiguaPlayerScreen>
         }
         await _interactions.pendingRates.catchError((Object _) {});
         await enhancementClosed.catchError((Object _) {});
+        await _pictureQuality.dispose().catchError((Object _) {});
         await _player.dispose();
       }),
     );

@@ -32,6 +32,7 @@ import 'sources_screen.dart';
 import 'lan_controller.dart';
 import 'lan_screen.dart';
 import 'video_enhancement.dart';
+import 'picture_quality_applier.dart';
 import 'video_output_size.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -71,6 +72,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   late final Player _player;
   late final VideoController? _video;
   late final VideoEnhancementController _enhancement;
+  late final PictureQualityApplier _pictureQuality;
   late final PlaybackLoader _loader;
   late final PlaybackPreloader _preloader;
   bool _preloadEnabled = true;
@@ -213,6 +215,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       category: widget.detail.drama.category,
       tags: widget.detail.drama.tags,
     );
+    _pictureQuality = PictureQualityApplier(_player)
+      ..apply(preferences.pictureQuality);
     _interactions = PlayerInteractions(
       player: _player,
       available: () =>
@@ -1248,6 +1252,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     final qualityChanged = nextPreferences.quality != _requestedQuality;
     _enhancement.setPreferences(nextPreferences.enhancement);
+    unawaited(_pictureQuality.apply(nextPreferences.pictureQuality));
     setState(() {
       _speed = nextPreferences.speed;
       _requestedQuality = nextPreferences.quality;
@@ -1610,6 +1615,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _operations.catchError((Object _) {}).then((_) async {
         await _interactions.pendingRates.catchError((Object _) {});
         await enhancementClosed.catchError((Object _) {});
+        await _pictureQuality.dispose().catchError((Object _) {});
         await _player.dispose();
       }),
     );

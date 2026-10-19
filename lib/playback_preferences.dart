@@ -1,3 +1,4 @@
+import 'picture_quality.dart';
 import 'video_enhancement_preferences.dart';
 
 const playbackSpeeds = [.5, .75, 1.0, 1.25, 1.5, 2.0, 3.0];
@@ -20,6 +21,7 @@ class PlaybackPreferences {
     this.swipeSeekSeconds = 60,
     this.autoPictureInPicture = true,
     this.enhancement = const VideoEnhancementPreferences(),
+    this.pictureQuality = const PictureQualityPreferences(),
   });
 
   final double speed;
@@ -32,6 +34,7 @@ class PlaybackPreferences {
   final int swipeSeekSeconds;
   final bool autoPictureInPicture;
   final VideoEnhancementPreferences enhancement;
+  final PictureQualityPreferences pictureQuality;
 
   PlaybackPreferences copyWith({
     double? speed,
@@ -44,6 +47,7 @@ class PlaybackPreferences {
     int? swipeSeekSeconds,
     bool? autoPictureInPicture,
     VideoEnhancementPreferences? enhancement,
+    PictureQualityPreferences? pictureQuality,
   }) => PlaybackPreferences(
     speed: speed ?? this.speed,
     quality: quality ?? this.quality,
@@ -55,6 +59,7 @@ class PlaybackPreferences {
     swipeSeekSeconds: swipeSeekSeconds ?? this.swipeSeekSeconds,
     autoPictureInPicture: autoPictureInPicture ?? this.autoPictureInPicture,
     enhancement: enhancement ?? this.enhancement,
+    pictureQuality: pictureQuality ?? this.pictureQuality,
   );
 
   Map<String, dynamic> toJson() => {
@@ -68,6 +73,7 @@ class PlaybackPreferences {
     'swipeSeekSeconds': swipeSeekSeconds,
     'autoPictureInPicture': autoPictureInPicture,
     'enhancement': enhancement.toJson(),
+    'pictureQuality': pictureQuality.toJson(),
   };
 
   factory PlaybackPreferences.fromJson(Map<String, dynamic> value) {
@@ -98,6 +104,8 @@ class PlaybackPreferences {
       swipeSeekSeconds: swipeSeekSeconds,
       autoPictureInPicture: autoPictureInPicture,
       enhancement: VideoEnhancementPreferences.fromJson(value['enhancement']),
+      pictureQuality:
+          PictureQualityPreferences.fromJson(value['pictureQuality']),
     );
   }
 }

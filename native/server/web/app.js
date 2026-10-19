@@ -14,6 +14,38 @@ var PLAY_RATE_KEY = 'duanjuweb:playbackRate';
 var AD_BLOCK_KEY = 'duanjuweb:adBlock';
 // 「全部源」勾选偏好记在本地：跨刷新保留，避免切源/翻页时被 URL 参数清掉。
 var ALL_SOURCES_KEY = 'duanjuweb:allSources';
+// 画质档（原画/锐化/Anime4K）偏好记在本地：切集/换线/刷新后保留选择。
+var PICTURE_QUALITY_KEY = 'duanjuweb:pictureQuality';
+
+function readPictureQuality() {
+  var value = { mode: 'original', strength: 50 };
+  try {
+    var raw = window.localStorage.getItem(PICTURE_QUALITY_KEY);
+    if (raw) {
+      var parsed = JSON.parse(raw);
+      if (parsed && ['original', 'sharpen', 'anime4k'].indexOf(parsed.mode) !== -1) {
+        value.mode = parsed.mode;
+      }
+      if (parsed && Number(parsed.strength) === parsed.strength) {
+        value.strength = Math.max(0, Math.min(100, parsed.strength | 0));
+      }
+    }
+  } catch (error) {
+    // 解析失败回退默认（原画）。
+  }
+  return value;
+}
+
+function writePictureQuality(value) {
+  try {
+    window.localStorage.setItem(
+      PICTURE_QUALITY_KEY,
+      JSON.stringify({ mode: value.mode, strength: value.strength | 0 }),
+    );
+  } catch (error) {
+    // 隐私模式写不了本地存储，只在当前会话生效。
+  }
+}
 
 function readAllSources() {
   try {
@@ -96,6 +128,7 @@ var state = {
   page: 1,
   query: '',
   allSources: readAllSources(),
+  pictureQuality: readPictureQuality(),
   hasMore: false,
   drama: null,
   chapters: [],
@@ -785,6 +818,409 @@ function detailSectionHTML() {
   );
 }
 
+// ---- 画质档（原画 / 锐化 / Anime4K）----
+// 锐化走 SVG feConvolveMatrix 卷积核；Anime4K 走 WebGPU（anime4k-webgpu UMD 全局）。
+// 偏好存 localStorage，切集/换线/刷新保留；离观看页或换片时释放 WebGPU 资源。
+var PICTURE_QUALITY_MODES = ['original', 'sharpen', 'anime4k'];
+var pictureQuality = {
+  video: null,
+  canvas: null,
+  abort: null,
+  rafId: null,
+  frameId: null,
+  disposed: false,
+  device: null,
+  renderContext: null,
+  uploader: null,
+  anime: null,
+  pipeline: null,
+  bindings: null,
+  width: 0,
+  height: 0,
+};
+
+function pictureQualitySelectHTML() {
+  var value = state.pictureQuality || { mode: 'original', strength: 50 };
+  var options = PICTURE_QUALITY_MODES
+    .map(function (mode) {
+      var label = mode === 'original' ? '原画' : mode === 'sharpen' ? '锐化' : 'Anime4K 2\u00d7';
+      var selected = value.mode === mode ? ' selected' : '';
+      return '<option value="' + mode + '"' + selected + '>' + label + '</option>';
+    })
+    .join('');
+  var showStrength = value.mode === 'sharpen' ? '' : ' style="display:none"';
+  return (
+    '<span class="picture-quality" title="画质档：只增强播放画面，下载文件保持原画">' +
+    '<label>画质档 <select id="picture-quality-select">' + options + '</select></label>' +
+    '<label class="picture-quality-strength" id="picture-quality-strength-wrap"' + showStrength + '>' +
+    '锐化强度 <input id="picture-quality-strength" type="range" min="0" max="100" step="5" value="' + (value.strength | 0) + '"></label>' +
+    '</span>'
+  );
+}
+
+// 锐化 SVG 卷积滤镜 + Anime4K 覆盖 canvas，注入在 <video> 之后、绝对定位覆盖画面。
+function pictureEnhancementChrome() {
+  return (
+    '<svg class="picture-quality-svg" aria-hidden="true" focusable="false">' +
+    '<defs><filter id="picture-sharpen-filter" x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">' +
+    '<feConvolveMatrix order="3" kernelMatrix="0 -1 0 -1 5 -1 0 -1 0" divisor="1" bias="0" edgeMode="duplicate" preserveAlpha="true"/>' +
+    '</filter></defs></svg>' +
+    '<canvas id="anime4k-canvas" class="picture-quality-canvas" aria-hidden="true"></canvas>' +
+    '<div class="picture-quality-note" id="picture-quality-note" style="display:none"></div>'
+  );
+}
+
+function pictureSharpenKernel(strength) {
+  var amount = Math.max(0, Math.min(100, Number(strength) || 0)) / 100 * 0.7;
+  return [0, -amount, 0, -amount, 1 + 4 * amount, -amount, 0, -amount, 0];
+}
+
+function pictureQualitySetSharpen(video) {
+  var strength = (state.pictureQuality || {}).strength || 50;
+  var kernel = pictureSharpenKernel(strength);
+  var filter = document.getElementById('picture-sharpen-filter');
+  if (filter) {
+    var matrix = filter.querySelector('feConvolveMatrix');
+    if (matrix) {
+      matrix.setAttribute('kernelMatrix', kernel.join(' '));
+    }
+  }
+  video.style.filter = 'url(#picture-sharpen-filter)';
+}
+
+// 切到锐化时显示强度滑块，其余档隐藏。
+function syncPictureQualityControls(strengthWrap, strengthBox) {
+  if (strengthWrap) {
+    strengthWrap.style.display = state.pictureQuality.mode === 'sharpen' ? '' : 'none';
+  }
+  if (strengthBox) {
+    strengthBox.value = (state.pictureQuality.strength | 0) || 0;
+  }
+}
+
+// 把当前画质档应用到给定 <video>：清旧效果后按档生效。
+function applyPictureQuality(video) {
+  teardownPictureQuality();
+  var value = state.pictureQuality || { mode: 'original' };
+  var canvas = document.getElementById('anime4k-canvas');
+  if (value.mode === 'sharpen') {
+    pictureQualitySetSharpen(video);
+  } else if (value.mode === 'anime4k') {
+    startPictureQualityAnime4K(video, canvas);
+  }
+}
+
+// Anime4K WebGPU 管线（移植自 hongguo-drama）：video 帧上传 → CNNx2M → 覆盖 canvas。
+function startPictureQualityAnime4K(video, canvas) {
+  if (!video || !canvas) return;
+  if (!window.navigator.gpu) {
+    showPictureQualityNote('此运行环境未开放 WebGPU，已恢复原画；可改用锐化。');
+    return;
+  }
+  var width = video.videoWidth;
+  var height = video.videoHeight;
+  if (!width || !height) {
+    // 片源尺寸未就绪：等 loadedmetadata 再启。
+    video.addEventListener(
+      'loadedmetadata',
+      function onReady() {
+        video.removeEventListener('loadedmetadata', onReady);
+        startPictureQualityAnime4K(video, canvas);
+      },
+      { once: true },
+    );
+    return;
+  }
+  if (width * height > 1920 * 1080) {
+    showPictureQualityNote('Anime4K 暂支持 1080p 及以下片源，已恢复原画；可改用锐化。');
+    return;
+  }
+  var lib = window['anime4k-webgpu'];
+  if (!lib || !lib.CNNx2M) {
+    showPictureQualityNote('Anime4K 资源未加载，已恢复原画。');
+    return;
+  }
+  var ctx = pictureQuality;
+  ctx.video = video;
+  ctx.canvas = canvas;
+  ctx.disposed = false;
+  var abort = new AbortController();
+  ctx.abort = abort;
+  initAnime4KRenderer(video, canvas, {
+    CNNx2M: lib.CNNx2M,
+    signal: abort.signal,
+    onReady: function () {
+      canvas.style.visibility = 'visible';
+      showPictureQualityNote('Anime4K 2\u00d7 已开启。');
+      schedulePictureQualityFrame();
+    },
+    onError: function (message) {
+      showPictureQualityNote(message || 'Anime4K 运算失败，已恢复原画；可改用锐化。');
+    },
+  });
+}
+
+function initAnime4KRenderer(video, canvas, hooks) {
+  var ctx = pictureQuality;
+  var width = video.videoWidth;
+  var height = video.videoHeight;
+
+  function dispose() {
+    if (hooks.signal.aborted) hooks.signal.removeEventListener('abort', dispose);
+    if (ctx.uploader) {
+      ctx.uploader.dispose();
+      ctx.uploader = null;
+    }
+    if (ctx.renderContext) ctx.renderContext.unconfigure();
+    if (ctx.device) {
+      ctx.device.destroy();
+      ctx.device = null;
+    }
+    ctx.anime = null;
+    ctx.pipeline = null;
+    ctx.bindings = null;
+    canvas.style.visibility = 'hidden';
+  }
+
+  hooks.signal.addEventListener('abort', dispose, { once: true });
+
+  var readyPromise = (async function () {
+    var adapter = await window.navigator.gpu.requestAdapter({
+      powerPreference: 'high-performance',
+    });
+    hooks.signal.throwIfAborted();
+    if (!adapter) throw new Error('当前显卡无法启用 WebGPU，已恢复原画；可改用锐化');
+    ctx.device = await adapter.requestDevice();
+    hooks.signal.throwIfAborted();
+    ctx.device.lost.then(function (info) {
+      hooks.onError('显卡增强已停止（' + (info ? info.reason : '') + '），已恢复原画');
+    });
+    ctx.device.addEventListener('uncapturederror', function (event) {
+      event.preventDefault();
+      hooks.onError('显卡增强运算失败，已恢复原画；可改用锐化');
+    });
+    ctx.renderContext = canvas.getContext('webgpu');
+    if (!ctx.renderContext) throw new Error('无法创建增强画面，已恢复原画');
+    ctx.width = width;
+    ctx.height = height;
+    var input = ctx.device.createTexture({
+      size: [width, height],
+      format: 'rgba16float',
+      usage: 2 | 8 | 16, // TEXTURE_BINDING | COPY_DST | RENDER_ATTACHMENT
+    });
+    ctx.anime = new hooks.CNNx2M({ device: ctx.device, inputTexture: input });
+    var output = ctx.anime.getOutputTexture();
+    canvas.width = output.width;
+    canvas.height = output.height;
+    var format = window.navigator.gpu.getPreferredCanvasFormat();
+    ctx.renderContext.configure({ device: ctx.device, format: format, alphaMode: 'opaque' });
+    var shaderModule = ctx.device.createShaderModule({ code: ANIME4K_DISPLAY_SHADER });
+    ctx.pipeline = ctx.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: shaderModule, entryPoint: 'vertex' },
+      fragment: { module: shaderModule, entryPoint: 'fragment', targets: [{ format: format }] },
+      primitive: { topology: 'triangle-list' },
+    });
+    ctx.bindings = ctx.device.createBindGroup({
+      layout: ctx.pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: ctx.device.createSampler({ magFilter: 'linear', minFilter: 'linear' }) },
+        { binding: 1, resource: output.createView() },
+      ],
+    });
+    var queue = ctx.device.queue;
+    // 帧上传器（移植自 hongguo-drama）：优先直接导入 video GPU backing，失败退 OffscreenCanvas。
+    var uploader = (function makeUploader() {
+      var bridge = null;
+      var bctx = null;
+      return {
+        upload: function () {
+          if (!bridge) {
+            try {
+              queue.copyExternalImageToTexture({ source: video }, { texture: input }, [width, height]);
+              return;
+            } catch (error) {
+              var ok =
+                error && error.name === 'SecurityError'
+                  ? false
+                  : /back resource/i.test((error && error.message) || '');
+              if (error && error.name !== 'OperationError' && !ok) throw error;
+              bridge = new OffscreenCanvas(width, height);
+              bctx = bridge.getContext('2d', { alpha: false });
+              if (!bctx) throw new Error('此片源暂不支持画质增强，已恢复原画；可改用锐化');
+            }
+          }
+          bctx.drawImage(video, 0, 0, width, height);
+          queue.copyExternalImageToTexture({ source: bridge }, { texture: input }, [width, height]);
+        },
+        dispose: function () {
+          if (bridge) {
+            bridge.width = 0;
+            bridge.height = 0;
+          }
+          bridge = bctx = null;
+        },
+      };
+    })();
+    ctx.uploader = uploader;
+    // 预热一帧，尽早暴露着色器/算力不兼容，避免播放中才炸。
+    var warm = ctx.device.createCommandEncoder();
+    uploader.upload();
+    ctx.anime.pass(warm);
+    var warmPass = warm.beginRenderPass({
+      colorAttachments: [
+        {
+          view: ctx.renderContext.getCurrentTexture().createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    });
+    warmPass.setPipeline(ctx.pipeline);
+    warmPass.setBindGroup(0, ctx.bindings);
+    warmPass.draw(3);
+    warmPass.end();
+    ctx.device.queue.submit([warm.finish()]);
+    await ctx.device.queue.onSubmittedWorkDone();
+  })();
+
+  readyPromise
+    .then(function () {
+      if (hooks.signal.aborted) return;
+      hooks.onReady();
+    })
+    .catch(function (error) {
+      if (error && error.name === 'AbortError') return;
+      dispose();
+      hooks.onError(error && error.message ? error.message : 'Anime4K 初始化失败，已恢复原画');
+    });
+}
+
+// 逐帧驱动 Anime4K：requestVideoFrameCallback 优先，退回 rAF。
+function schedulePictureQualityFrame() {
+  var ctx = pictureQuality;
+  if (ctx.disposed || !ctx.video) return;
+  var video = ctx.video;
+  if (document.hidden || video.paused || video.ended || video.seeking) return;
+  function draw() {
+    ctx.frameId = null;
+    ctx.rafId = null;
+    if (ctx.disposed || ctx.video !== video || !video || video.seeking) return;
+    if (video.readyState < 2) {
+      schedulePictureQualityFrame();
+      return;
+    }
+    if (!ctx.anime || !ctx.uploader || !ctx.device) {
+      schedulePictureQualityFrame();
+      return;
+    }
+    try {
+      renderAnime4KFrame();
+      schedulePictureQualityFrame();
+    } catch (error) {
+      teardownPictureQuality();
+      showPictureQualityNote('Anime4K 运算失败，已恢复原画；可改用锐化');
+    }
+  }
+  if (video.requestVideoFrameCallback) {
+    ctx.frameId = video.requestVideoFrameCallback(draw);
+  } else {
+    ctx.rafId = requestAnimationFrame(draw);
+  }
+}
+
+// Anime4K 逐帧渲染：上传帧 → CNN pass → 显示 pass（句柄均在 pictureQuality 上）。
+function renderAnime4KFrame() {
+  var ctx = pictureQuality;
+  if (!ctx.device || !ctx.anime || !ctx.uploader) return;
+  ctx.uploader.upload();
+  var encoder = ctx.device.createCommandEncoder();
+  ctx.anime.pass(encoder);
+  var pass = encoder.beginRenderPass({
+    colorAttachments: [
+      {
+        view: ctx.renderContext.getCurrentTexture().createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        loadOp: 'clear',
+        storeOp: 'store',
+      },
+    ],
+  });
+  pass.setPipeline(ctx.pipeline);
+  pass.setBindGroup(0, ctx.bindings);
+  pass.draw(3);
+  pass.end();
+  ctx.device.queue.submit([encoder.finish()]);
+}
+
+function teardownPictureQuality() {
+  var ctx = pictureQuality;
+  if (ctx.frameId !== null && ctx.video && ctx.video.cancelVideoFrameCallback) {
+    ctx.video.cancelVideoFrameCallback(ctx.frameId);
+    ctx.frameId = null;
+  }
+  if (ctx.rafId !== null) {
+    cancelAnimationFrame(ctx.rafId);
+    ctx.rafId = null;
+  }
+  if (ctx.abort) {
+    ctx.abort.abort();
+    ctx.abort = null;
+  }
+  if (ctx.uploader) {
+    ctx.uploader.dispose();
+    ctx.uploader = null;
+  }
+  if (ctx.renderContext) {
+    try {
+      ctx.renderContext.unconfigure();
+    } catch (error) {}
+    ctx.renderContext = null;
+  }
+  if (ctx.device) {
+    ctx.device.destroy();
+    ctx.device = null;
+  }
+  ctx.anime = null;
+  ctx.pipeline = null;
+  ctx.bindings = null;
+  ctx.width = 0;
+  ctx.height = 0;
+  ctx.slowFrames = 0;
+  if (ctx.video) {
+    ctx.video.style.filter = '';
+  }
+  if (ctx.canvas) {
+    ctx.canvas.style.visibility = 'hidden';
+  }
+  ctx.video = null;
+  ctx.canvas = null;
+  ctx.disposed = true;
+}
+
+function showPictureQualityNote(message) {
+  var note = document.getElementById('picture-quality-note');
+  if (note) {
+    note.textContent = message;
+    note.style.display = 'block';
+  }
+}
+
+var ANIME4K_DISPLAY_SHADER = [
+  'struct Vertex { @builtin(position) position: vec4f, @location(0) uv: vec2f }',
+  '@vertex fn vertex(@builtin(vertex_index) index: u32) -> Vertex {',
+  '  let positions = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3));',
+  '  let p = positions[index];',
+  '  return Vertex(vec4f(p, 0, 1), vec2f((p.x + 1) * 0.5, (1 - p.y) * 0.5));',
+  '}',
+  '@group(0) @binding(0) var imageSampler: sampler;',
+  '@group(0) @binding(1) var image: texture_2d<f32>;',
+  '@fragment fn fragment(input: Vertex) -> @location(0) vec4f {',
+  '  return vec4f(textureSample(image, imageSampler, input.uv).rgb, 1);',
+  '}',
+].join('\n');
+
 // 融合观看页整页骨架：顶部播放器（video + 控制条）+ 中间选集 + 底部详情。
 function watchPageHTML(plan, index, message, kind) {
   var qualities = plan.qualities || [];
@@ -801,6 +1237,7 @@ function watchPageHTML(plan, index, message, kind) {
         .join('') +
       '</select></label>'
     : '';
+  var pictureQuality = pictureQualitySelectHTML();
   var routeTotal = plan.routeCount || 1;
   var routeSelect =
     '<label>线路 <select id="route-select">' +
@@ -827,13 +1264,16 @@ function watchPageHTML(plan, index, message, kind) {
     '<div class="player-title">' +
     escapeHTML(state.drama.title) + ' · ' + escapeHTML(((state.chapters || [])[index] || {}).title || '') +
     '</div>' +
+    '<div class="player-stage">' +
     '<video id="player" controls autoplay playsinline></video>' +
+    pictureEnhancementChrome() +
+    '</div>' +
     '<div class="notice" id="play-note" data-kind="' + kind + '"' +
     (message ? ' style="display:block"' : '') + '>' +
     escapeHTML(message) +
     '</div>' +
     '<div class="notice next-up" id="next-up"></div>' +
-    '<div class="player-bar">' + qualitySelect + routeSelect +
+    '<div class="player-bar">' + qualitySelect + pictureQuality + routeSelect +
     '<span class="spacer"></span>' + adBlockBox + autoNextBox + favorite + previous + next +
     '</div></div>';
   return '<div class="watch">' + playerWrap + episodesGridHTML() + detailSectionHTML() + '</div>';
@@ -906,6 +1346,30 @@ function renderWatch(id, index, source) {
           state.route = Number(routeBox.value);
           renderWatch(id, index, source);
         });
+      }
+      var pictureQualityBox = document.getElementById('picture-quality-select');
+      if (pictureQualityBox) {
+        var strengthWrap = document.getElementById('picture-quality-strength-wrap');
+        var strengthBox = document.getElementById('picture-quality-strength');
+        pictureQualityBox.addEventListener('change', function () {
+          state.pictureQuality.mode = pictureQualityBox.value;
+          writePictureQuality(state.pictureQuality);
+          syncPictureQualityControls(strengthWrap, strengthBox);
+          var video = document.getElementById('player');
+          if (video) {
+            applyPictureQuality(video);
+          }
+        });
+        if (strengthBox) {
+          strengthBox.addEventListener('input', function () {
+            state.pictureQuality.strength = Number(strengthBox.value) | 0;
+            writePictureQuality(state.pictureQuality);
+            var video = document.getElementById('player');
+            if (video && state.pictureQuality.mode === 'sharpen') {
+              pictureQualitySetSharpen(video);
+            }
+          });
+        }
       }
       var autoNextToggle = document.getElementById('auto-next');
       if (autoNextToggle) {
@@ -1243,6 +1707,7 @@ function fitVideo(video) {
 function stopPlayback() {
   cancelAutoNext();
   flushProgress();
+  teardownPictureQuality();
   if (hlsInstance) {
     hlsInstance.destroy();
     hlsInstance = null;
@@ -1535,6 +2000,8 @@ function mountVideo(url, resumeAt) {
   }
   // 浏览器拿不到视频帧但时间在走（HEVC/私有流），9 秒内自动换线。
   startBlackScreenWatchdog(video, token);
+  // 套用当前画质档（原画/锐化/Anime4K）；Anime4K 会等片源尺寸就绪后启用。
+  applyPictureQuality(video);
 }
 
 function optionHTML(value, label, selected) {

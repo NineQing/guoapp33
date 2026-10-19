@@ -5,10 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/episode_browser.dart';
 import 'package:duanju_app/playback_preferences.dart';
+import 'package:duanju_app/picture_quality_ui.dart';
 import 'package:duanju_app/video_enhancement.dart';
 import 'package:duanju_app/video_enhancement_settings.dart';
 
-enum PlayerMenuSection { episodes, speed, quality, settings }
+enum PlayerMenuSection {
+  episodes,
+  speed,
+  quality,
+  pictureQuality,
+  settings
+}
 
 class PlayerMenu extends StatefulWidget {
   const PlayerMenu({
@@ -84,6 +91,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
       PlayerMenuSection.episodes => '选集 · 共 ${widget.episodes.length} 集',
       PlayerMenuSection.speed => '播放倍速',
       PlayerMenuSection.quality => '清晰度',
+      PlayerMenuSection.pictureQuality => '画质档',
       PlayerMenuSection.settings => '播放设置',
     };
     return Dialog(
@@ -224,6 +232,19 @@ class _PlayerMenuState extends State<PlayerMenu> {
                 style: helperStyle,
               ),
             ),
+          const SizedBox(height: 20),
+        ],
+        if (all || widget.section == PlayerMenuSection.pictureQuality) ...[
+          PictureQualityPanel(
+            key: const ValueKey('menu-picture-quality'),
+            value: preferences.pictureQuality,
+            busy: _busy,
+            onChanged: (next) => _run(
+              () => widget.onPreferences(
+                preferences.copyWith(pictureQuality: next),
+              ),
+            ),
+          ),
           const SizedBox(height: 20),
         ],
         if ((all || widget.section == PlayerMenuSection.quality) &&
