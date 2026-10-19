@@ -33,7 +33,7 @@ class RemoteTextInput extends StatelessWidget {
   static bool enabled(BuildContext context) {
     if (AppLayout.isTelevision(context)) return true;
     if (kIsWeb) return false;
-    const platform = defaultTargetPlatform;
+    final platform = defaultTargetPlatform;
     return platform == TargetPlatform.macOS ||
         platform == TargetPlatform.windows ||
         platform == TargetPlatform.linux;
