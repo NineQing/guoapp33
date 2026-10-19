@@ -837,6 +837,11 @@ var pictureQuality = {
   bindings: null,
   width: 0,
   height: 0,
+  drawing: false,
+  redraw: false,
+  revision: 0,
+  lastFrameAt: -Infinity,
+  slowFrames: 0,
 };
 
 function pictureQualitySelectHTML() {
@@ -905,8 +910,11 @@ function applyPictureQuality(video) {
   var canvas = document.getElementById('anime4k-canvas');
   if (value.mode === 'sharpen') {
     pictureQualitySetSharpen(video);
+    showPictureQualityNote('锐化已开启（强度 ' + ((value.strength | 0) || 50) + '%）');
   } else if (value.mode === 'anime4k') {
     startPictureQualityAnime4K(video, canvas);
+  } else {
+    showPictureQualityNote('');
   }
 }
 
@@ -944,6 +952,12 @@ function startPictureQualityAnime4K(video, canvas) {
   ctx.video = video;
   ctx.canvas = canvas;
   ctx.disposed = false;
+  ctx.drawing = false;
+  ctx.redraw = false;
+  ctx.revision = 0;
+  ctx.lastFrameAt = -Infinity;
+  ctx.slowFrames = 0;
+  showPictureQualityNote('正在准备 Anime4K…');
   var abort = new AbortController();
   ctx.abort = abort;
   initAnime4KRenderer(video, canvas, {
@@ -1006,7 +1020,7 @@ function initAnime4KRenderer(video, canvas, hooks) {
     var input = ctx.device.createTexture({
       size: [width, height],
       format: 'rgba16float',
-      usage: 2 | 8 | 16, // TEXTURE_BINDING | COPY_DST | RENDER_ATTACHMENT
+      usage: 1 | 8 | 16, // COPY_DST | RENDER_ATTACHMENT | TEXTURE_BINDING
     });
     ctx.anime = new hooks.CNNx2M({ device: ctx.device, inputTexture: input });
     var output = ctx.anime.getOutputTexture();
@@ -1034,23 +1048,27 @@ function initAnime4KRenderer(video, canvas, hooks) {
       var bridge = null;
       var bctx = null;
       return {
+        get usesCanvas() {
+          return !!bridge;
+        },
         upload: function () {
           if (!bridge) {
             try {
               queue.copyExternalImageToTexture({ source: video }, { texture: input }, [width, height]);
               return;
             } catch (error) {
-              var ok =
-                error && error.name === 'SecurityError'
-                  ? false
-                  : /back resource/i.test((error && error.message) || '');
-              if (error && error.name !== 'OperationError' && !ok) throw error;
+              if (
+                (error && error.name === 'SecurityError') ||
+                (error && error.name !== 'OperationError' && !/back resource/i.test((error && error.message) || ''))
+              ) {
+                throw error;
+              }
               bridge = new OffscreenCanvas(width, height);
               bctx = bridge.getContext('2d', { alpha: false });
               if (!bctx) throw new Error('此片源暂不支持画质增强，已恢复原画；可改用锐化');
             }
           }
-          bctx.drawImage(video, 0, 0, width, height);
+          if (bctx) bctx.drawImage(video, 0, 0, width, height);
           queue.copyExternalImageToTexture({ source: bridge }, { texture: input }, [width, height]);
         },
         dispose: function () {
@@ -1106,22 +1124,7 @@ function schedulePictureQualityFrame() {
   function draw() {
     ctx.frameId = null;
     ctx.rafId = null;
-    if (ctx.disposed || ctx.video !== video || !video || video.seeking) return;
-    if (video.readyState < 2) {
-      schedulePictureQualityFrame();
-      return;
-    }
-    if (!ctx.anime || !ctx.uploader || !ctx.device) {
-      schedulePictureQualityFrame();
-      return;
-    }
-    try {
-      renderAnime4KFrame();
-      schedulePictureQualityFrame();
-    } catch (error) {
-      teardownPictureQuality();
-      showPictureQualityNote('Anime4K 运算失败，已恢复原画；可改用锐化');
-    }
+    drawAnime4KFrame();
   }
   if (video.requestVideoFrameCallback) {
     ctx.frameId = video.requestVideoFrameCallback(draw);
@@ -1130,28 +1133,73 @@ function schedulePictureQualityFrame() {
   }
 }
 
-// Anime4K 逐帧渲染：上传帧 → CNN pass → 显示 pass（句柄均在 pictureQuality 上）。
-function renderAnime4KFrame() {
+// Anime4K 逐帧渲染（对齐 hongguo-drama）：async + drawing/redraw 节奏守卫 + 分辨率守卫，
+// 逐帧 await onSubmittedWorkDone 防止命令缓冲区堆积触发 WebGPU 校验错误。
+function drawAnime4KFrame() {
   var ctx = pictureQuality;
-  if (!ctx.device || !ctx.anime || !ctx.uploader) return;
-  ctx.uploader.upload();
-  var encoder = ctx.device.createCommandEncoder();
-  ctx.anime.pass(encoder);
-  var pass = encoder.beginRenderPass({
-    colorAttachments: [
-      {
-        view: ctx.renderContext.getCurrentTexture().createView(),
-        clearValue: { r: 0, g: 0, b: 0, a: 1 },
-        loadOp: 'clear',
-        storeOp: 'store',
-      },
-    ],
-  });
-  pass.setPipeline(ctx.pipeline);
-  pass.setBindGroup(0, ctx.bindings);
-  pass.draw(3);
-  pass.end();
-  ctx.device.queue.submit([encoder.finish()]);
+  var video = ctx.video;
+  if (!video || ctx.disposed || !ctx.anime || !ctx.uploader || !ctx.device) return;
+  if (document.hidden || video.seeking || video.readyState < 2 || video.paused || video.ended) return;
+  // 片源尺寸变了（清晰度切换等）：重建增强管线。
+  if (video.videoWidth !== ctx.width || video.videoHeight !== ctx.height) {
+    teardownPictureQuality();
+    applyPictureQuality(video);
+    return;
+  }
+  if (ctx.drawing) {
+    ctx.redraw = true;
+    return;
+  }
+  ctx.drawing = true;
+  var revision = ctx.revision;
+  (async function () {
+    try {
+      var started = performance.now();
+      if (ctx.uploader.usesCanvas && !video.paused && started - ctx.lastFrameAt < 1000 / 30) {
+        return; // OffscreenCanvas 路已够快，限到 ~30fps 省算力
+      }
+      ctx.lastFrameAt = started;
+      ctx.uploader.upload();
+      var encoder = ctx.device.createCommandEncoder();
+      ctx.anime.pass(encoder);
+      var pass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: ctx.renderContext.getCurrentTexture().createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
+        ],
+      });
+      pass.setPipeline(ctx.pipeline);
+      pass.setBindGroup(0, ctx.bindings);
+      pass.draw(3);
+      pass.end();
+      ctx.device.queue.submit([encoder.finish()]);
+      await ctx.device.queue.onSubmittedWorkDone();
+      var elapsed = performance.now() - started;
+      ctx.slowFrames = elapsed > 150 ? ctx.slowFrames + 1 : 0;
+      if (ctx.slowFrames >= 5) {
+        throw new Error('当前设备增强较慢，已恢复原画；可改用锐化');
+      }
+      if (ctx.disposed || ctx.revision !== revision) return;
+      ctx.canvas.style.visibility = 'visible';
+    } catch (error) {
+      if (ctx.disposed) return;
+      if (error && error.message) showPictureQualityNote(error.message);
+      teardownPictureQuality();
+      return;
+    } finally {
+      ctx.drawing = false;
+      if (ctx.redraw && !ctx.disposed) {
+        ctx.redraw = false;
+        drawAnime4KFrame();
+      } else {
+        schedulePictureQualityFrame();
+      }
+    }
+  })();
 }
 
 function teardownPictureQuality() {
@@ -1188,6 +1236,8 @@ function teardownPictureQuality() {
   ctx.width = 0;
   ctx.height = 0;
   ctx.slowFrames = 0;
+  ctx.drawing = false;
+  ctx.redraw = false;
   if (ctx.video) {
     ctx.video.style.filter = '';
   }
@@ -1202,8 +1252,8 @@ function teardownPictureQuality() {
 function showPictureQualityNote(message) {
   var note = document.getElementById('picture-quality-note');
   if (note) {
-    note.textContent = message;
-    note.style.display = 'block';
+    note.textContent = message || '';
+    note.style.display = message ? 'block' : 'none';
   }
 }
 
