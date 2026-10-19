@@ -148,23 +148,25 @@ class _SavedLibraryState extends State<SavedLibrary> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: TextField(
-            key: ValueKey(
-              widget.history ? 'history-search' : 'favorites-search',
-            ),
-            controller: _search,
-            onChanged: (_) => setState(() {}),
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: widget.history ? '搜索观看记录' : '搜索追剧',
-              prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: _search.text.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: '清空搜索',
-                      onPressed: () => setState(_search.clear),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
+          child: RemoteTextInput(
+            child: TextField(
+              key: ValueKey(
+                widget.history ? 'history-search' : 'favorites-search',
+              ),
+              controller: _search,
+              onChanged: (_) => setState(() {}),
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: widget.history ? '搜索观看记录' : '搜索追剧',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: '清空搜索',
+                        onPressed: () => setState(_search.clear),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+              ),
             ),
           ),
         ),

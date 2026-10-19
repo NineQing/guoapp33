@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'search_input.dart';
@@ -21,6 +22,69 @@ void ensureTelevisionFocus(BuildContext context) {
     if (scope.hasFocus) return;
     scope.nextFocus();
   });
+}
+
+// 遥控器/键盘方向键移出搜索框：上下键跳出、返回键收起输入法并移出、
+// 确认键重新唤起输入法。电视端与 macOS/Windows/Linux 桌面端生效。
+class RemoteTextInput extends StatelessWidget {
+  const RemoteTextInput({super.key, required this.child});
+  final Widget child;
+
+  static bool enabled(BuildContext context) {
+    if (AppLayout.isTelevision(context)) return true;
+    if (kIsWeb) return false;
+    const platform = defaultTargetPlatform;
+    return platform == TargetPlatform.macOS ||
+        platform == TargetPlatform.windows ||
+        platform == TargetPlatform.linux;
+  }
+
+  KeyEventResult _key(FocusNode node, KeyEvent event, bool television) {
+    final focus = FocusManager.instance.primaryFocus;
+    final editable =
+        focus?.context?.findAncestorStateOfType<EditableTextState>();
+    if (editable == null ||
+        (event is! KeyDownEvent && event is! KeyRepeatEvent)) {
+      return KeyEventResult.ignored;
+    }
+    if (!editable.textEditingValue.composing.isCollapsed) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowUp) {
+      focus!.focusInDirection(TraversalDirection.up);
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      focus!.focusInDirection(TraversalDirection.down);
+    } else if (key == LogicalKeyboardKey.escape ||
+        key == LogicalKeyboardKey.goBack) {
+      if (!focus!.focusInDirection(TraversalDirection.down) &&
+          !focus.focusInDirection(TraversalDirection.up)) {
+        return KeyEventResult.ignored;
+      }
+    } else if (television &&
+        [
+          LogicalKeyboardKey.select,
+          LogicalKeyboardKey.enter,
+          LogicalKeyboardKey.numpadEnter,
+        ].contains(key)) {
+      editable.requestKeyboard();
+    } else {
+      return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled(context)) return child;
+    final television = AppLayout.isTelevision(context);
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (node, event) => _key(node, event, television),
+      child: child,
+    );
+  }
 }
 
 class RemoteTarget extends StatefulWidget {

@@ -1041,19 +1041,21 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         else
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: TextField(
-              controller: _search,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: '搜索剧名、站源或分类',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: _search.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: '清空搜索',
-                        onPressed: () => setState(_search.clear),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
+            child: RemoteTextInput(
+              child: TextField(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: '搜索剧名、站源或分类',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _search.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: '清空搜索',
+                          onPressed: () => setState(_search.clear),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                ),
               ),
             ),
           ),
