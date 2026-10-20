@@ -234,7 +234,13 @@ class PlayerInteractions extends ChangeNotifier {
       _moved = true;
       _holdSeekDirection = 0;
       _endHold();
-      if (_swipeEnabled &&
+      // 进度拖拽仲裁与 guo 版对齐：水平位移必须同时满足「绝对位移 > 24」与
+      // 「明显占优」。旧写法只看比例，竖直慢拖起手的触摸水平噪声（dx≈15、dy≈8）
+      // 会误进进度拖拽并永久锁死 _seeking，导致亮度分支再也进不去、拖半屏无反应。
+      if (!_seeking &&
+          !_brightnessDragging &&
+          _swipeEnabled &&
+          delta.dx.abs() > 24 &&
           delta.dx.abs() > delta.dy.abs() * 1.5 &&
           player.state.duration > Duration.zero) {
         _beginDragSeek();

@@ -218,8 +218,15 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			}
 			continue
 		}
-		if len(content) == 0 || len(content) > providerMaxBodyBytes {
-			return nil, errors.New("红果 App 接口未返回有效数据")
+		if len(content) == 0 {
+			// 红果网关偶发限流/抖动会返回 HTTP 200 + 空 body，重试一次基本即恢复
+			// （用户实测"再次点击取流一般都会成功"）。直接报错会把重试推给用户，
+			// 纳入本循环既有的退避重试；超限后仍返回同一文案。
+			lastErr = errors.New("红果 App 接口未返回有效数据")
+			continue
+		}
+		if len(content) > providerMaxBodyBytes {
+			return nil, errors.New("红果 App 接口响应超过上限")
 		}
 		var result map[string]any
 		decoder := json.NewDecoder(bytes.NewReader(content))
