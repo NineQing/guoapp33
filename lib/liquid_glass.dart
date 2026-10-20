@@ -12,9 +12,10 @@ bool iosDesign(BuildContext context) =>
 bool glassDesign(BuildContext context) =>
     !AppLayout.isTelevision(context) &&
     switch (Theme.of(context).platform) {
-      TargetPlatform.iOS ||
-      TargetPlatform.android ||
-      TargetPlatform.windows => true,
+      TargetPlatform.iOS || TargetPlatform.android => true,
+      // Windows 桌面不使用玻璃（BackdropFilter 模糊在 Windows 软光栅/ANGLE 渲染
+      // 下会导致首页整页黑屏），与参考项目 guoappxx 的 Windows 渲染保持一致：
+      // 走标准 Material 布局，不使用 LiquidGlass / BackdropFilter。
       _ => false,
     };
 

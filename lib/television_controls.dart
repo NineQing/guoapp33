@@ -513,6 +513,8 @@ class TelevisionPlaybackSetting {
     this.preload,
     this.enhancement,
     this.route,
+    this.decoder,
+    this.compatibleRendering,
   });
   final double? speed;
   final int? quality;
@@ -521,6 +523,8 @@ class TelevisionPlaybackSetting {
   final bool? preload;
   final VideoEnhancementPreferences? enhancement;
   final int? route;
+  final TelevisionDecoder? decoder;
+  final bool? compatibleRendering;
 }
 
 class TelevisionSettingsDialog extends StatelessWidget {
@@ -542,6 +546,8 @@ class TelevisionSettingsDialog extends StatelessWidget {
     this.onCompareEnhancement,
     this.route = 0,
     this.routeCount = 1,
+    this.decoder,
+    this.compatibleRendering,
   });
   final double speed;
   final int quality;
@@ -559,6 +565,8 @@ class TelevisionSettingsDialog extends StatelessWidget {
   final VoidCallback? onCompareEnhancement;
   final int route;
   final int routeCount;
+  final TelevisionDecoder? decoder;
+  final bool? compatibleRendering;
 
   @override
   Widget build(BuildContext context) => AlertDialog(
@@ -631,6 +639,52 @@ class TelevisionSettingsDialog extends StatelessWidget {
                     ),
                 ],
               ),
+            ],
+            if (decoder != null) ...[
+              const SizedBox(height: 20),
+              const Text('解码方式', style: TextStyle(fontSize: 18)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final (value, label) in [
+                    (TelevisionDecoder.optimized, '硬解（默认）'),
+                    (TelevisionDecoder.hardware, '硬解（兼容）'),
+                    (TelevisionDecoder.software, '软解（兼容）'),
+                  ])
+                    RemoteButton(
+                      key: ValueKey('tv-decoder-${value.name}'),
+                      label: label,
+                      selected: value == decoder,
+                      onPressed: () => Navigator.pop(
+                        context,
+                        TelevisionPlaybackSetting(decoder: value),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text('有声音没画面时可切换尝试', style: TextStyle(fontSize: 14)),
+              const SizedBox(height: 20),
+            ],
+            if (compatibleRendering != null) ...[
+              RemoteButton(
+                key: const ValueKey('tv-compatible-rendering'),
+                label: compatibleRendering! ? '兼容渲染模式：开' : '兼容渲染模式：关',
+                onPressed: () => Navigator.pop(
+                  context,
+                  TelevisionPlaybackSetting(
+                    compatibleRendering: !compatibleRendering!,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '切换解码方式仍没画面时可尝试，需重启应用生效',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 20),
             ],
             const SizedBox(height: 20),
             if (enhancement != null)

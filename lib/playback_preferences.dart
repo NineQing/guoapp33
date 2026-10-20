@@ -5,6 +5,8 @@ const playbackSpeeds = [.5, .75, 1.0, 1.25, 1.5, 2.0, 3.0];
 const holdSpeeds = [1.5, 2.0, 2.5, 3.0];
 const swipeSeekChoices = [15, 30, 60, 120];
 
+enum TelevisionDecoder { optimized, hardware, software }
+
 String speedLabel(double value) => value == value.roundToDouble()
     ? value.toInt().toString()
     : value.toString();
@@ -22,6 +24,7 @@ class PlaybackPreferences {
     this.autoPictureInPicture = true,
     this.enhancement = const VideoEnhancementPreferences(),
     this.pictureQuality = const PictureQualityPreferences(),
+    this.televisionDecoder = TelevisionDecoder.optimized,
   });
 
   final double speed;
@@ -35,6 +38,7 @@ class PlaybackPreferences {
   final bool autoPictureInPicture;
   final VideoEnhancementPreferences enhancement;
   final PictureQualityPreferences pictureQuality;
+  final TelevisionDecoder televisionDecoder;
 
   PlaybackPreferences copyWith({
     double? speed,
@@ -48,6 +52,7 @@ class PlaybackPreferences {
     bool? autoPictureInPicture,
     VideoEnhancementPreferences? enhancement,
     PictureQualityPreferences? pictureQuality,
+    TelevisionDecoder? televisionDecoder,
   }) => PlaybackPreferences(
     speed: speed ?? this.speed,
     quality: quality ?? this.quality,
@@ -60,6 +65,7 @@ class PlaybackPreferences {
     autoPictureInPicture: autoPictureInPicture ?? this.autoPictureInPicture,
     enhancement: enhancement ?? this.enhancement,
     pictureQuality: pictureQuality ?? this.pictureQuality,
+    televisionDecoder: televisionDecoder ?? this.televisionDecoder,
   );
 
   Map<String, dynamic> toJson() => {
@@ -74,6 +80,7 @@ class PlaybackPreferences {
     'autoPictureInPicture': autoPictureInPicture,
     'enhancement': enhancement.toJson(),
     'pictureQuality': pictureQuality.toJson(),
+    'televisionDecoder': televisionDecoder.name,
   };
 
   factory PlaybackPreferences.fromJson(Map<String, dynamic> value) {
@@ -106,6 +113,9 @@ class PlaybackPreferences {
       enhancement: VideoEnhancementPreferences.fromJson(value['enhancement']),
       pictureQuality:
           PictureQualityPreferences.fromJson(value['pictureQuality']),
+      televisionDecoder:
+          TelevisionDecoder.values.asNameMap()[value['televisionDecoder']] ??
+          TelevisionDecoder.optimized,
     );
   }
 }

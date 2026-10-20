@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.BatteryManager
 import android.os.PowerManager
 import android.os.SystemClock
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -22,6 +23,7 @@ import android.util.Rational
 import android.view.InputDevice
 import android.view.WindowManager
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.FlutterShellArgs
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
@@ -65,6 +67,23 @@ class MainActivity : FlutterActivity() {
         val attributes = window.attributes
         attributes.screenBrightness = value.coerceIn(0.01f, 1f)
         window.attributes = attributes
+    }
+
+    private fun renderingPreferences() =
+        getSharedPreferences("duanju_rendering", Context.MODE_PRIVATE)
+
+    private fun compatibleRendering(): Boolean =
+        renderingPreferences().getBoolean("compatibleRendering", false)
+
+    override fun getFlutterShellArgs(): FlutterShellArgs {
+        val args = super.getFlutterShellArgs()
+        if (compatibleRendering()) args.add("--enable-impeller=false")
+        return args
+    }
+
+    private fun restartApplication() {
+        startActivity(Intent.makeRestartActivityTask(ComponentName(this, MainActivity::class.java)))
+        Runtime.getRuntime().exit(0)
     }
 
     @Suppress("DEPRECATION")
@@ -179,6 +198,19 @@ class MainActivity : FlutterActivity() {
                             }
                         }
                         "playbackPower" -> result.success(runCatching { playbackPower() }.getOrNull())
+                        "compatibleRendering" -> result.success(compatibleRendering())
+                        "setCompatibleRendering" -> {
+                            val enabled = call.argument<Boolean>("enabled")
+                            if (enabled == null) {
+                                result.error("invalid_rendering_mode", "缺少兼容渲染模式状态", null)
+                            } else if (!renderingPreferences().edit()
+                                    .putBoolean("compatibleRendering", enabled).commit()) {
+                                result.error("rendering_mode_not_saved", "兼容渲染模式未能保存", null)
+                            } else {
+                                result.success(null)
+                                restartApplication()
+                            }
+                        }
                         "systemProxy" -> {
                             val connection = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
                             val proxy = connection.defaultProxy

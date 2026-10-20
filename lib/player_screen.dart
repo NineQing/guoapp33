@@ -137,6 +137,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   double _resumePosition = 0;
   bool _rotating = false;
   bool _television = false;
+  TelevisionDecoder _televisionDecoder = TelevisionDecoder.optimized;
+  bool get _televisionDecoderApplies => _television && Platform.isAndroid;
   AppOrientationController? _orientationController;
   bool get _pictureInPictureVisible =>
       _pictureInPictureActive || _pictureInPictureRequested;
@@ -158,6 +160,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     preload: _preloadEnabled,
     adBlock: _adBlock,
     enhancement: _enhancement.preferences,
+    televisionDecoder: _televisionDecoder,
   );
   String get _qualityLabel => _plan?.local == true
       ? '本地原画'
@@ -187,6 +190,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _danmakuEnabled = preferences.danmaku;
     _adBlock = preferences.adBlock;
     _preloadEnabled = true;
+    _televisionDecoder = preferences.televisionDecoder;
     _loader = PlaybackLoader(widget.repository);
     _preloader = PlaybackPreloader(widget.repository);
     _danmaku = DanmakuController(widget.repository)
@@ -1054,6 +1058,59 @@ class _PlayerScreenState extends State<PlayerScreen>
         }
         final platform = _player.platform;
         if (platform is NativePlayer) {
+          if (Platform.isAndroid) {
+            if (_televisionDecoderApplies) {
+              final optimized =
+                  _televisionDecoder == TelevisionDecoder.optimized;
+              await platform.setProperty(
+                'hwdec',
+                _televisionDecoder == TelevisionDecoder.software
+                    ? 'no'
+                    : 'mediacodec-copy',
+              );
+              await platform.setProperty('hwdec-codecs', 'all');
+              await platform.setProperty(
+                'opengl-pbo',
+                optimized ? 'yes' : 'no',
+              );
+              await platform.setProperty(
+                'video-latency-hacks',
+                optimized ? 'yes' : 'no',
+              );
+              await platform.setProperty('scale', 'bilinear');
+              await platform.setProperty('cscale', 'bilinear');
+              await platform.setProperty('dscale', 'bilinear');
+              await platform.setProperty('correct-downscaling', 'no');
+              await platform.setProperty(
+                'vd-lavc-skiploopfilter',
+                optimized ? 'all' : 'default',
+              );
+              await platform.setProperty(
+                'vd-lavc-skipidct',
+                optimized ? 'all' : 'default',
+              );
+              await platform.setProperty('vd-lavc-threads', '2');
+              await platform.setProperty(
+                'demuxer-max-bytes',
+                '${4 * 1024 * 1024}',
+              );
+              await platform.setProperty(
+                'demuxer-max-back-bytes',
+                '${1 * 1024 * 1024}',
+              );
+              await platform.setProperty('demuxer-readahead-secs', '5');
+            } else {
+              await platform.setProperty('hwdec', 'auto-safe');
+              await platform.setProperty('hwdec-codecs', 'all');
+              await platform.setProperty('vd-lavc-skiploopfilter', 'nonkey');
+              await platform.setProperty('vd-lavc-threads', '4');
+            }
+            await platform.setProperty('vd-lavc-fast', 'yes');
+            await platform.setProperty('video-sync', 'audio');
+            await platform.setProperty('framedrop', 'vo');
+          } else if (Platform.isWindows) {
+            await platform.setProperty('hwdec', 'd3d11va-copy');
+          }
           await platform.setProperty(
             'demuxer-lavf-o',
             [
@@ -1251,6 +1308,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (!mounted || _closed || widget.store.profileEpoch != _profileEpoch)
       return;
     final qualityChanged = nextPreferences.quality != _requestedQuality;
+    final decoderChanged =
+        nextPreferences.televisionDecoder != _televisionDecoder;
     _enhancement.setPreferences(nextPreferences.enhancement);
     unawaited(_pictureQuality.apply(nextPreferences.pictureQuality));
     setState(() {
@@ -1260,6 +1319,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _danmakuEnabled = nextPreferences.danmaku;
       _adBlock = nextPreferences.adBlock;
       _preloadEnabled = true;
+      _televisionDecoder = nextPreferences.televisionDecoder;
     });
     _danmaku.setEnabled(_danmakuEnabled);
     _syncDanmaku();
@@ -1271,6 +1331,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       await _retry(quality: nextPreferences.quality);
     } else if (adBlockChanged && _plan?.local != true) {
       // 去广告开关按会话生效：重建播放会话让核心按新标志清洗或放行原画。
+      await _retry();
+    } else if (decoderChanged && _televisionDecoderApplies) {
       await _retry();
     }
   }
@@ -1504,6 +1566,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     setState(() => _panelOpen = true);
     TelevisionPlaybackSetting? selection;
     try {
+      final compatibleRendering = _televisionDecoderApplies
+          ? await AppDevice.compatibleRendering()
+          : null;
+      if (!mounted || _closed) return;
       selection = await showDialog<TelevisionPlaybackSetting>(
         context: context,
         builder: (menuContext) => AnimatedBuilder(
@@ -1530,6 +1596,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               },
               route: _currentRoute,
               routeCount: _routeCount,
+              decoder: _televisionDecoderApplies ? _televisionDecoder : null,
+              compatibleRendering: compatibleRendering,
             ),
           ),
         ),
@@ -1538,6 +1606,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (mounted && !_closed) setState(() => _panelOpen = false);
     }
     if (selection == null || !mounted || _closed) return;
+    if (selection.compatibleRendering != null) {
+      await _switchCompatibleRendering(selection.compatibleRendering!);
+      return;
+    }
     if (selection.route != null && selection.route != _currentRoute) {
       await _selectRoute(selection.route!);
       return;
@@ -1551,10 +1623,38 @@ class _PlayerScreenState extends State<PlayerScreen>
           danmaku: selection.danmaku,
           preload: true,
           enhancement: selection.enhancement,
+          televisionDecoder: selection.decoder,
         ),
       );
     } catch (_) {
       _notice('播放偏好未能保存，请重试');
+    }
+  }
+
+  Future<void> _switchCompatibleRendering(bool enabled) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Theme(
+        data: televisionTheme(AppTheme.dark),
+        child: AlertDialog(
+          title: Text(enabled ? '开启兼容渲染模式？' : '关闭兼容渲染模式？'),
+          content: const Text('需要重启应用才能生效，正在进行的下载会中断。'),
+          actions: [
+            TextButton(
+              autofocus: true,
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('立即重启'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (accepted == true) {
+      await AppDevice.setCompatibleRendering(enabled);
     }
   }
 

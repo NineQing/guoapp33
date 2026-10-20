@@ -1033,12 +1033,18 @@ class TelevisionSearchDialog extends StatefulWidget {
     this.suggestions,
     this.recentSearches = const [],
     this.onCancel,
+    this.crossSource = false,
+    this.onCrossSourceChanged,
+    this.crossSourceCount = 0,
   });
   final Future<List<String>> Function(String)? suggestions;
   final List<String> recentSearches;
   final VoidCallback? onCancel;
   final String initialValue;
   final String title;
+  final bool crossSource;
+  final ValueChanged<bool>? onCrossSourceChanged;
+  final int crossSourceCount;
 
   @override
   State<TelevisionSearchDialog> createState() => _TelevisionSearchDialogState();
@@ -1072,6 +1078,9 @@ class _TelevisionSearchDialogState extends State<TelevisionSearchDialog> {
                 suggestions: widget.suggestions,
                 onCancel: widget.onCancel,
                 onSearch: (value) => Navigator.pop(context, value),
+                crossSource: widget.crossSource,
+                onCrossSourceChanged: widget.onCrossSourceChanged,
+                crossSourceCount: widget.crossSourceCount,
               ),
               if (widget.recentSearches.isNotEmpty) ...[
                 const SizedBox(height: 16),

@@ -425,6 +425,11 @@ class _HomeScreenState extends State<HomeScreen> {
         recentSearches: widget.store.recentSearches,
         onCancel: () => unawaited(widget.repository.cancelSuggestions()),
         suggestions: _searchSuggestions ? widget.repository.suggestions : null,
+        crossSource: _crossSourceSearch,
+        onCrossSourceChanged: _crossSourceSearch || _visibleSourceIds.isNotEmpty
+            ? _changeCrossSource
+            : null,
+        crossSourceCount: _visibleSourceIds.length,
       ),
     );
     if (query != null && mounted) {

@@ -166,6 +166,8 @@ class _PlayerScreenState extends State<XiguaPlayerScreen>
   double _resumePosition = 0;
   bool _rotating = false;
   bool _television = false;
+  bool _brightnessAdjusted = false;
+  double? _cachedBrightness;
   AppOrientationController? _orientationController;
   bool get _pictureInPictureVisible =>
       _pictureInPictureActive || _pictureInPictureRequested;
@@ -322,11 +324,14 @@ class _PlayerScreenState extends State<XiguaPlayerScreen>
         unawaited(_play(next));
         return '第 ${widget.detail.episodes[next].number} 集';
       },
+      onBrightness: _androidBrightness ? _setScreenBrightness : null,
+      currentBrightness: _androidBrightness ? _currentBrightness : null,
     );
     _playerFocus.addListener(() {
       if (!_playerFocus.hasPrimaryFocus && !_closed) _interactions.cancel();
     });
     _configurePictureInPicture();
+    unawaited(_readSystemBrightness());
     _subscriptions.add(
       _player.stream.error.listen((error) {
         if (_enhancement.handlePlaybackError(error)) return;
@@ -1625,6 +1630,54 @@ class _PlayerScreenState extends State<XiguaPlayerScreen>
     unawaited(_seekTo(target));
   }
 
+  bool get _androidBrightness => defaultTargetPlatform == TargetPlatform.android;
+
+  double? _currentBrightness() {
+    return _cachedBrightness;
+  }
+
+  Future<void> _setScreenBrightness(double value) async {
+    if (_closed) return;
+    _cachedBrightness = value;
+    _brightnessAdjusted = true;
+    try {
+      await AppDevice.channel.invokeMethod<void>('setScreenBrightness', {
+        'value': value,
+      });
+    } on PlatformException {
+      _notice('亮度调整失败');
+    } on MissingPluginException {
+      _notice('亮度调整失败');
+    }
+  }
+
+  Future<void> _resetScreenBrightness() async {
+    if (!_brightnessAdjusted) return;
+    _brightnessAdjusted = false;
+    _cachedBrightness = null;
+    try {
+      await AppDevice.channel.invokeMethod<void>('resetScreenBrightness');
+    } on PlatformException {
+      // 恢复失败不打扰用户：窗口亮度覆盖只在本 Activity 存续，返回即失效。
+    } on MissingPluginException {
+      // 同上。
+    }
+  }
+
+  Future<void> _readSystemBrightness() async {
+    if (!_androidBrightness || _brightnessAdjusted) return;
+    try {
+      final value = await AppDevice.channel.invokeMethod<double>(
+        'screenBrightness',
+      );
+      _cachedBrightness = value;
+    } on PlatformException {
+      _cachedBrightness = null;
+    } on MissingPluginException {
+      _cachedBrightness = null;
+    }
+  }
+
   Future<void> _televisionEpisodes(BuildContext context) async {
     if (_panelOpen || _closed) return;
     setState(() => _panelOpen = true);
@@ -1741,6 +1794,7 @@ class _PlayerScreenState extends State<XiguaPlayerScreen>
     _recommendationGeneration++;
     _pictureInPictureExitTimer?.cancel();
     unawaited(_syncPictureInPictureParams());
+    unawaited(_resetScreenBrightness());
     if (_pictureInPictureHandlerInstalled) {
       AppDevice.channel.setMethodCallHandler(null);
     }

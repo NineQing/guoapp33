@@ -21,8 +21,9 @@ abstract final class AppTheme {
     if (platform == TargetPlatform.iOS) {
       return brightness == Brightness.dark ? iosDark : iosLight;
     }
-    if (platform == TargetPlatform.android ||
-        platform == TargetPlatform.windows) {
+    // 仅 Android 使用玻璃主题；Windows 回退到标准 Material 主题，与参考项目
+    // guoappxx 一致，避免 Windows 软光栅/ANGLE 渲染下整页黑屏。
+    if (platform == TargetPlatform.android) {
       return _glassThemes.putIfAbsent((
         platform,
         brightness,
