@@ -20,6 +20,8 @@ class PlayerInteractions extends ChangeNotifier {
     required this.onFullscreen,
     required this.onEpisode,
     this.onSeek,
+    this.onBrightness,
+    this.currentBrightness,
   }) {
     _playing = player.stream.playing.listen((playing) {
       if (!playing) cancel();
@@ -35,6 +37,8 @@ class PlayerInteractions extends ChangeNotifier {
   final VoidCallback onFullscreen;
   final String Function(int direction) onEpisode;
   final Future<void> Function(Duration)? onSeek;
+  final Future<void> Function(double value)? onBrightness;
+  final double? Function()? currentBrightness;
   late final StreamSubscription<bool> _playing;
   Timer? _holdTimer;
   Timer? _hintTimer;
@@ -61,6 +65,10 @@ class PlayerInteractions extends ChangeNotifier {
   int _dragStart = 0;
   double _dragWidth = 1;
   double _dragSpan = 0;
+  double _paneHeight = 0;
+  bool _originOnLeft = false;
+  bool _brightnessDragging = false;
+  double _brightnessAnchor = .5;
 
   String get feedback => _feedback;
   bool get boosting => _boosting;
@@ -176,6 +184,7 @@ class PlayerInteractions extends ChangeNotifier {
     _pointer = null;
     _origin = null;
     _lastPosition = null;
+    _brightnessDragging = false;
     _endHold(silent: true);
     hint('');
   }
@@ -198,6 +207,10 @@ class PlayerInteractions extends ChangeNotifier {
     _swipeEnabled = swipeEnabled && event.kind == PointerDeviceKind.touch;
     _swipeThreshold = math.max(56, math.min(100, height * .1));
     _dragWidth = width > 0 ? width : 1;
+    _paneHeight = height;
+    _originOnLeft = event.localPosition.dx < width / 2;
+    _brightnessDragging = false;
+    _brightnessAnchor = (currentBrightness?.call() ?? .5).clamp(.01, 1.0);
     _holdSeekDirection = _swipeEnabled && width > 0
         ? event.localPosition.dx < width * .38
               ? -1
@@ -225,7 +238,25 @@ class PlayerInteractions extends ChangeNotifier {
           delta.dx.abs() > delta.dy.abs() * 1.5 &&
           player.state.duration > Duration.zero) {
         _beginDragSeek();
+        return;
       }
+      // 左半屏“慢速”垂直拖动 = 系统亮度临时调整（按住超 260ms 才激活，
+      // 快速竖直 flick 仍走原有上下滑动切集；右半屏手势不改动）。
+      if (!_brightnessDragging &&
+          _swipeEnabled &&
+          _originOnLeft &&
+          onBrightness != null &&
+          delta.dy.abs() > 24 &&
+          delta.dy.abs() > delta.dx.abs() * 1.2 &&
+          event.timeStamp - _started > const Duration(milliseconds: 260)) {
+        _brightnessDragging = true;
+        _brightnessAnchor = (currentBrightness?.call() ?? .5).clamp(.01, 1.0);
+      }
+    }
+    if (_brightnessDragging && _paneHeight > 0) {
+      final value = (_brightnessAnchor - delta.dy / _paneHeight).clamp(.01, 1.0);
+      unawaited(onBrightness?.call(value));
+      hint('亮度 ${(value * 100).round()}%', persistent: true);
     }
   }
 
@@ -241,6 +272,7 @@ class PlayerInteractions extends ChangeNotifier {
     final swipe =
         _swipeEnabled &&
         !_held &&
+        !_brightnessDragging &&
         _moved &&
         delta.dy.abs() >= _swipeThreshold &&
         delta.dy.abs() > delta.dx.abs() * 1.5 &&
@@ -251,6 +283,10 @@ class PlayerInteractions extends ChangeNotifier {
     _pointer = null;
     _origin = null;
     _holdSeekDirection = 0;
+    if (_brightnessDragging) {
+      _brightnessDragging = false;
+      hint('');
+    }
     _endHold();
     if (swipe && available()) hint(onEpisode(delta.dy < 0 ? 1 : -1));
   }
