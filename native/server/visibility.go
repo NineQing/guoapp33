@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -130,6 +131,10 @@ func handleSourceVisibility(writer http.ResponseWriter, request *http.Request) {
 				}
 			}
 		}
+		// 与 /api/sources 同款排序：先中文（拼音序）后字母序。
+		sort.SliceStable(items, func(i, j int) bool {
+			return core.CompareSourceNames(items[i]["name"].(string), items[j]["name"].(string)) < 0
+		})
 		writeJSON(writer, map[string]any{"items": items})
 	case http.MethodPost:
 		payload := struct {

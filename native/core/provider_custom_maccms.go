@@ -854,7 +854,11 @@ func stripJSONComments(text string) string {
 }
 
 func (engine *nativeEngine) customMaccmsSources() []customMaccmsSource {
-	return engine.customRegistry.all()
+	records := engine.customRegistry.all()
+	sort.SliceStable(records, func(i, j int) bool {
+		return CompareSourceNames(records[i].Name, records[j].Name) < 0
+	})
+	return records
 }
 
 func (engine *nativeEngine) addCustomMaccmsSource(name, base, rule string) (customMaccmsSource, error) {

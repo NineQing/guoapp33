@@ -199,6 +199,21 @@ body {
   font-size: 14px; font-weight: 600; color: var(--muted);
   margin-bottom: 10px;
 }
+/* 选集标题行：左侧「选集（N）」、右侧「倒序」开关。 */
+#episodes-section .section-title {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+/* 选集「倒序」开关：与播放器控制条同款勾选样式。 */
+.ep-reverse {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 13px; font-weight: 500; color: var(--muted);
+  cursor: pointer; user-select: none;
+}
+.ep-reverse:hover { color: var(--text); }
+.ep-reverse input {
+  width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer;
+}
+.ep-reverse:has(input:checked) { color: var(--accent); }
 .episodes { margin-top: 0; }
 .ep-link.active {
   background: var(--accent); border-color: var(--accent); color: #fff;
@@ -340,4 +355,11 @@ body {
 @media (max-width: 720px) {
   .live-columns { grid-template-columns: 1fr; }
   .live-col-platforms, .live-col-channels { max-width: none; min-height: 240px; }
+  /* 移动端：搜索框 + 全部源 + 搜索按钮整组独占一行、靠左紧密排列。 */
+  .search {
+    flex-basis: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+  .search input { width: 140px; flex: 1 1 auto; }
 }

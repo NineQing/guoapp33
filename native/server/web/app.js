@@ -16,6 +16,8 @@ var AD_BLOCK_KEY = 'duanjuweb:adBlock';
 var ALL_SOURCES_KEY = 'duanjuweb:allSources';
 // 画质档（原画/锐化）偏好记在本地：切集/换线/刷新后保留选择。
 var PICTURE_QUALITY_KEY = 'duanjuweb:pictureQuality';
+// 选集倒序开关记在本地：刷新/换剧后仍按上次的排列习惯展示选集。
+var EPISODES_REVERSED_KEY = 'duanjuweb:episodesReversed';
 
 function readPictureQuality() {
   var value = { mode: 'original', strength: 50 };
@@ -120,6 +122,22 @@ function writeAutoNext(value) {
   }
 }
 
+function readEpisodesReversed() {
+  try {
+    return window.localStorage.getItem(EPISODES_REVERSED_KEY) === 'on';
+  } catch (error) {
+    return false;
+  }
+}
+
+function writeEpisodesReversed(value) {
+  try {
+    window.localStorage.setItem(EPISODES_REVERSED_KEY, value ? 'on' : 'off');
+  } catch (error) {
+    // 隐私模式下写不了本地存储，只在当前会话生效。
+  }
+}
+
 var state = {
   source: 'hongguo',
   categories: [],
@@ -140,6 +158,7 @@ var state = {
   ffmpeg: true,
   autoNext: readAutoNext(),
   adBlock: readAdBlock(),
+  episodesReversed: readEpisodesReversed(),
   library: { history: [], favorites: [] },
   libraryTab: 'history',
   libraryEditing: false,
@@ -758,28 +777,47 @@ function defaultWatchIndex(dramaRef) {
 }
 
 // 中间选集区：当前集高亮，点击走就地换集（不销毁 <video>，倍速/全屏保留）。
-function episodesGridHTML() {
+// 「倒序」开关只改变格子显示顺序（第 N 集→第 1 集 反向排列），
+// 格子的 data-index / href 仍指向真实集序，因此上一/下一集与自动连播不受影响。
+function episodesGridInnerHTML() {
   var drama = state.drama;
   var chapters = state.chapters || [];
-  if (!chapters.length) {
-    return '';
-  }
   var suffix = drama.source ? '&source=' + encodeURIComponent(drama.source) : '';
-  var cells = chapters
-    .map(function (chapter, position) {
+  var order = chapters.map(function (unused, position) {
+    return position;
+  });
+  if (state.episodesReversed) {
+    order = order.reverse();
+  }
+  var cells = order
+    .map(function (position) {
       var active = position === state.index ? ' active' : '';
+      var title = (chapters[position] || {}).title || '第 ' + (position + 1) + ' 集';
       return (
         '<a class="ep-link' + active + '" data-index="' + position + '" href="#/play?id=' +
         encodeURIComponent(drama.id) + '&index=' + position + suffix + '">' +
-        escapeHTML(chapter.title || '第 ' + (position + 1) + ' 集') +
+        escapeHTML(title) +
         '</a>'
       );
     })
     .join('');
+  var reversedToggle =
+    '<label class="toggle ep-reverse" title="选集列表倒序/正序展示，不影响下一集推进">' +
+    '<input type="checkbox" id="episodes-reversed"' +
+    (state.episodesReversed ? ' checked' : '') + '>倒序</label>';
   return (
-    '<div class="section"><div class="section-title">选集（' + chapters.length + '）</div>' +
-    '<div class="episodes">' + cells + '</div></div>'
+    '<div class="section-title"><span>选集（' + chapters.length + '）</span>' +
+    reversedToggle + '</div>' +
+    '<div class="episodes">' + cells + '</div>'
   );
+}
+
+function episodesGridHTML() {
+  var chapters = state.chapters || [];
+  if (!chapters.length) {
+    return '';
+  }
+  return '<div class="section" id="episodes-section">' + episodesGridInnerHTML() + '</div>';
 }
 
 // 底部详情区：海报 + 简介 + 元信息 + 切换播放源（同一剧在其它站源的副本）。
@@ -1126,6 +1164,26 @@ function bindEpisodes() {
       playToIndex(targetIndex);
     });
   });
+  // 「倒序」开关：切档只重排选集格子，不销毁 <video>，全屏/倍速/进度都保留。
+  var reversedToggle = document.getElementById('episodes-reversed');
+  if (reversedToggle) {
+    reversedToggle.addEventListener('change', function () {
+      state.episodesReversed = reversedToggle.checked;
+      writeEpisodesReversed(state.episodesReversed);
+      rerenderEpisodes();
+    });
+  }
+}
+
+// 只重写选集区（正序/倒序），复用同一个 <video>；随后重新绑定格子与开关事件。
+function rerenderEpisodes() {
+  var section = document.getElementById('episodes-section');
+  if (!section) {
+    return;
+  }
+  section.innerHTML = episodesGridInnerHTML();
+  bindEpisodes();
+  highlightEpisode(state.index);
 }
 
 // 就地跳到指定集：复用 <video>，更新选中高亮与地址栏（不整页重建）。
