@@ -35,18 +35,16 @@ class PictureQualityPreferences {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'mode': mode.name,
-    'strength': strength,
-  };
+  Map<String, dynamic> toJson() => {'mode': mode.name, 'strength': strength};
 
   factory PictureQualityPreferences.fromJson(Object? value) {
     if (value is! Map) return const PictureQualityPreferences();
     final strength = (value['strength'] as num?)?.round() ?? 50;
     return PictureQualityPreferences(
-      mode: PictureQualityMode.values
-          .where((mode) => mode.name == value['mode'])
-          .firstOrNull ??
+      mode:
+          PictureQualityMode.values
+              .where((mode) => mode.name == value['mode'])
+              .firstOrNull ??
           PictureQualityMode.original,
       strength: strength.clamp(0, 100),
     );

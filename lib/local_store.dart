@@ -137,12 +137,13 @@ class LocalStore extends ChangeNotifier {
   }
 
   bool allowsSource(String source) {
-  if (locked) return false;
-  if (!SourceSite.isAvailable(source)) return false;
-  // 自定义源为设备级功能，管理员与普通用户均可使用。
-  if (SourceSite.isCustomId(source)) return true;
-  return profile.allows(source);
-}
+    if (locked) return false;
+    if (!SourceSite.isAvailable(source)) return false;
+    // 自定义源为设备级功能，管理员与普通用户均可使用。
+    if (SourceSite.isCustomId(source)) return true;
+    return profile.allows(source);
+  }
+
   List<SourceSite> get sources {
     final builtIn = SourceSite.values.where((site) => allowsSource(site.id));
     final custom = _customSources
@@ -202,6 +203,7 @@ class LocalStore extends ChangeNotifier {
       _notify();
     });
   }
+
   List<CustomSourceSite> get customSources => List.unmodifiable(_customSources);
 
   void _loadCustomSources() {
@@ -227,19 +229,20 @@ class LocalStore extends ChangeNotifier {
     final epoch = _epoch;
     await _queue(() async {
       if (locked || epoch != _epoch) return;
-      final sorted = List<CustomSourceSite>.of(sources)..sort((a, b) {
-        final la = a.name.toLowerCase(), lb = b.name.toLowerCase();
-        return la.compareTo(lb);
-      });
-      final serialized = jsonEncode(sorted.map((site) => site.toJson()).toList());
+      final sorted = List<CustomSourceSite>.of(sources)
+        ..sort((a, b) {
+          final la = a.name.toLowerCase(), lb = b.name.toLowerCase();
+          return la.compareTo(lb);
+        });
+      final serialized = jsonEncode(
+        sorted.map((site) => site.toJson()).toList(),
+      );
       if (serialized == _string('customSources')) {
         _customSources = sorted;
         _syncCustomIds();
         return;
       }
-      await _commit({
-        'customSources': serialized,
-      });
+      await _commit({'customSources': serialized});
       _customSources = sorted;
       _syncCustomIds();
       _notify();
@@ -542,8 +545,9 @@ class LocalStore extends ChangeNotifier {
       ? _setting('displayMode', value)
       : Future.value();
   String get player => _string('player') == 'xigua' ? 'xigua' : 'guo';
-  Future<void> setPlayer(String value) =>
-      {'guo', 'xigua'}.contains(value) ? _setting('player', value) : Future.value();
+  Future<void> setPlayer(String value) => {'guo', 'xigua'}.contains(value)
+      ? _setting('player', value)
+      : Future.value();
   Future<void> setThemeMode(String value) =>
       {'light', 'dark', 'system'}.contains(value)
       ? _setting('themeMode', value)

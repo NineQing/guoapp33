@@ -219,98 +219,101 @@ void main() {
     await player.dispose();
   });
 
-  test('left half slow vertical drag adjusts brightness, fast flick switches', () async {
-    final platform = ScriptedPlayer();
-    final player = Player(platformPlayer: platform);
-    await platform.open(Media('https://media.test/working.mp4'));
-    final brightness = <double>[];
-    var episodes = 0;
-    final interactions = PlayerInteractions(
-      player: player,
-      available: () => true,
-      baseSpeed: () => 1,
-      onTogglePlayback: () {},
-      onFullscreen: () {},
-      onEpisode: (_) {
-        episodes++;
-        return '';
-      },
-      onBrightness: (value) async => brightness.add(value),
-      currentBrightness: () => .5,
-    );
+  test(
+    'left half slow vertical drag adjusts brightness, fast flick switches',
+    () async {
+      final platform = ScriptedPlayer();
+      final player = Player(platformPlayer: platform);
+      await platform.open(Media('https://media.test/working.mp4'));
+      final brightness = <double>[];
+      var episodes = 0;
+      final interactions = PlayerInteractions(
+        player: player,
+        available: () => true,
+        baseSpeed: () => 1,
+        onTogglePlayback: () {},
+        onFullscreen: () {},
+        onEpisode: (_) {
+          episodes++;
+          return '';
+        },
+        onBrightness: (value) async => brightness.add(value),
+        currentBrightness: () => .5,
+      );
 
-    interactions.pointerDown(
-      PointerDownEvent(
-        pointer: 1,
-        position: const Offset(100, 200),
-        buttons: kPrimaryButton,
-        kind: PointerDeviceKind.touch,
-        timeStamp: Duration.zero,
-      ),
-      swipeEnabled: true,
-      height: 400,
-      width: 800,
-    );
-    for (var step = 1; step <= 3; step++) {
-      interactions.pointerMove(
-        PointerMoveEvent(
+      interactions.pointerDown(
+        PointerDownEvent(
           pointer: 1,
-          position: Offset(100, 200 - step * 40),
+          position: const Offset(100, 200),
           buttons: kPrimaryButton,
           kind: PointerDeviceKind.touch,
-          timeStamp: Duration(milliseconds: 120 * step),
+          timeStamp: Duration.zero,
+        ),
+        swipeEnabled: true,
+        height: 400,
+        width: 800,
+      );
+      for (var step = 1; step <= 3; step++) {
+        interactions.pointerMove(
+          PointerMoveEvent(
+            pointer: 1,
+            position: Offset(100, 200 - step * 40),
+            buttons: kPrimaryButton,
+            kind: PointerDeviceKind.touch,
+            timeStamp: Duration(milliseconds: 120 * step),
+          ),
+        );
+      }
+      expect(brightness, isNotEmpty);
+      expect(brightness.first, greaterThan(.5));
+      expect(interactions.feedback, contains('亮度'));
+      interactions.pointerUp(
+        PointerUpEvent(
+          pointer: 1,
+          position: const Offset(100, 80),
+          buttons: 0,
+          kind: PointerDeviceKind.touch,
+          timeStamp: const Duration(milliseconds: 380),
         ),
       );
-    }
-    expect(brightness, isNotEmpty);
-    expect(brightness.first, greaterThan(.5));
-    expect(interactions.feedback, contains('亮度'));
-    interactions.pointerUp(
-      PointerUpEvent(
-        pointer: 1,
-        position: const Offset(100, 80),
-        buttons: 0,
-        kind: PointerDeviceKind.touch,
-        timeStamp: const Duration(milliseconds: 380),
-      ),
-    );
-    await Future<void>.delayed(Duration.zero);
-    expect(episodes, 0);
+      await Future<void>.delayed(Duration.zero);
+      expect(episodes, 0);
 
-    interactions.pointerDown(
-      PointerDownEvent(
-        pointer: 2,
-        position: const Offset(100, 200),
-        buttons: kPrimaryButton,
-        kind: PointerDeviceKind.touch,
-        timeStamp: Duration.zero,
-      ),
-      swipeEnabled: true,
-      height: 400,
-      width: 800,
-    );
-    interactions.pointerMove(
-      PointerMoveEvent(
-        pointer: 2,
-        position: const Offset(100, 90),
-        buttons: kPrimaryButton,
-        kind: PointerDeviceKind.touch,
-        timeStamp: const Duration(milliseconds: 120),
-      ),
-    );
-    interactions.pointerUp(
-      PointerUpEvent(
-        pointer: 2,
-        position: const Offset(100, 90),
-        buttons: 0,
-        kind: PointerDeviceKind.touch,
-        timeStamp: const Duration(milliseconds: 160),
-      ),
-    );
-    await Future<void>.delayed(Duration.zero);
-    expect(episodes, 1);
+      interactions.pointerDown(
+        PointerDownEvent(
+          pointer: 2,
+          position: const Offset(100, 200),
+          buttons: kPrimaryButton,
+          kind: PointerDeviceKind.touch,
+          timeStamp: Duration.zero,
+        ),
+        swipeEnabled: true,
+        height: 400,
+        width: 800,
+      );
+      interactions.pointerMove(
+        PointerMoveEvent(
+          pointer: 2,
+          position: const Offset(100, 90),
+          buttons: kPrimaryButton,
+          kind: PointerDeviceKind.touch,
+          timeStamp: const Duration(milliseconds: 120),
+        ),
+      );
+      interactions.pointerUp(
+        PointerUpEvent(
+          pointer: 2,
+          position: const Offset(100, 90),
+          buttons: 0,
+          kind: PointerDeviceKind.touch,
+          timeStamp: const Duration(milliseconds: 160),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(episodes, 1);
 
-    interactions.dispose();
-    await player.dispose();
-  });
+      interactions.dispose();
+      await player.dispose();
+    },
+  );
 }

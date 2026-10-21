@@ -19,8 +19,8 @@ import 'video_enhancement_mpv.dart';
 class PictureQualityApplier {
   PictureQualityApplier(this.player)
     : _native = player.platform is NativePlayer
-        ? player.platform as NativePlayer
-        : null,
+          ? player.platform as NativePlayer
+          : null,
       _mpv = player.platform is NativePlayer
           ? VideoEnhancementMpv(player.platform as NativePlayer)
           : null {
@@ -132,7 +132,9 @@ class PictureQualityApplier {
       if (_sharpenActive) {
         final filters = mpv.read('vf');
         if (filters is List &&
-            filters.any((item) => item is Map && item['label'] == _filterLabel)) {
+            filters.any(
+              (item) => item is Map && item['label'] == _filterLabel,
+            )) {
           mpv.command(['vf', 'remove', '@$_filterLabel']);
         }
         _sharpenActive = false;
@@ -142,8 +144,9 @@ class PictureQualityApplier {
     }
     try {
       if (_animeActive && _ownedAnimeShader != null) {
-        final remaining =
-            _shaderList(mpv).where((item) => item != _ownedAnimeShader).toList();
+        final remaining = _shaderList(
+          mpv,
+        ).where((item) => item != _ownedAnimeShader).toList();
         mpv.setStrings('glsl-shaders', remaining);
         mpv.set('fbo-format', 'bgr0');
         _ownedAnimeShader = null;

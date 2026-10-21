@@ -86,16 +86,8 @@ class SourceSite {
   static const hongguo = SourceSite('hongguo', '红果', '短剧 · 漫剧 · AI 剧');
   static const dsd = SourceSite('dsd', '帝果', '分类视频 · 在线搜索');
   static const guipian = SourceSite('guipian', '鬼片', '鬼片 · 电视剧 · 动漫');
-  static const ikanbot = SourceSite(
-    'ikanbot',
-    '爱看机器人',
-    '电影 · 剧集 · 多线路搜索',
-  );
-  static const a123 = SourceSite(
-    'a123',
-    'A123',
-    '电影 · 连续剧 · 综艺 · 动漫 · 多线路',
-  );
+  static const ikanbot = SourceSite('ikanbot', '爱看机器人', '电影 · 剧集 · 多线路搜索');
+  static const a123 = SourceSite('a123', 'A123', '电影 · 连续剧 · 综艺 · 动漫 · 多线路');
   static const hanxiaoquan = SourceSite(
     'hanxiaoquan',
     '韩小圈',
@@ -145,6 +137,7 @@ class SourceSite {
     ...duanjuValues,
   ];
   static const values = allSourcesEnabled ? knownValues : [hongguo];
+
   /// 当前会话已注册的自定义源 ID，供可用性判断与站源归一化使用。
   static final Set<String> customIds = {};
   static bool isCustomId(String id) => id.startsWith('custom:');
@@ -158,6 +151,7 @@ class SourceSite {
     }
     return allValues.firstWhere((site) => site.id == id, orElse: () => hongguo);
   }
+
   static String customName(String id) {
     if (id.startsWith('custom:')) return '自定义源';
     return id;

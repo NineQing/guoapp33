@@ -97,7 +97,8 @@ class LivePlaybackController extends ChangeNotifier {
     final platform = player.platform;
     if (platform is NativePlayer) {
       unawaited(
-        platform.setProperty('force-seekable', 'yes', waitForInitialization: true)
+        platform
+            .setProperty('force-seekable', 'yes', waitForInitialization: true)
             .catchError((Object _) {}),
       );
     }

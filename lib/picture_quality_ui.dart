@@ -26,20 +26,19 @@ class PictureQualityPanel extends StatelessWidget {
     required String label,
     required bool selected,
     required VoidCallback action,
-  }) =>
-      television
-          ? ChoiceChip(
-              key: ValueKey(id),
-              label: Text(label, style: const TextStyle(fontSize: 15)),
-              selected: selected,
-              onSelected: busy ? null : (_) => action(),
-            )
-          : ChoiceChip(
-              key: ValueKey(id),
-              label: Text(label),
-              selected: selected,
-              onSelected: busy ? null : (_) => action(),
-            );
+  }) => television
+      ? ChoiceChip(
+          key: ValueKey(id),
+          label: Text(label, style: const TextStyle(fontSize: 15)),
+          selected: selected,
+          onSelected: busy ? null : (_) => action(),
+        )
+      : ChoiceChip(
+          key: ValueKey(id),
+          label: Text(label),
+          selected: selected,
+          onSelected: busy ? null : (_) => action(),
+        );
 
   @override
   Widget build(BuildContext context) {
@@ -53,10 +52,7 @@ class PictureQualityPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '画质档',
-          style: television ? const TextStyle(fontSize: 18) : null,
-        ),
+        Text('画质档', style: television ? const TextStyle(fontSize: 18) : null),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -86,9 +82,8 @@ class PictureQualityPanel extends StatelessWidget {
                   value: value.strength.toDouble(),
                   onChanged: busy
                       ? null
-                      : (next) => onChanged(
-                          value.copyWith(strength: next.round()),
-                        ),
+                      : (next) =>
+                            onChanged(value.copyWith(strength: next.round())),
                 ),
               ),
               SizedBox(

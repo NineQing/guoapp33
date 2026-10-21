@@ -160,11 +160,9 @@ class _SearchInputState extends State<SearchInput> {
     _timer = Timer(const Duration(milliseconds: 300), () async {
       var result = const <String>[];
       try {
-        final fetched = (await widget.suggestions!(query))
-            .where((s) => s.trim().isNotEmpty)
-            .toSet()
-            .take(10)
-            .toList();
+        final fetched = (await widget.suggestions!(
+          query,
+        )).where((s) => s.trim().isNotEmpty).toSet().take(10).toList();
         if (generation == _generation && mounted) {
           if (_cache.length >= 32) _cache.remove(_cache.keys.first);
           _cache[query] = fetched;
@@ -281,8 +279,8 @@ class _SearchInputState extends State<SearchInput> {
                               visualDensity: VisualDensity.compact,
                               materialTapTargetSize:
                                   MaterialTapTargetSize.shrinkWrap,
-                              onChanged: (value) => widget
-                                  .onCrossSourceChanged!(value ?? false),
+                              onChanged: (value) =>
+                                  widget.onCrossSourceChanged!(value ?? false),
                             ),
                           ),
                           const SizedBox(width: 2),

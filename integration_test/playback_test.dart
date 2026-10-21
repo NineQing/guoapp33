@@ -59,6 +59,7 @@ class DeviceFixtureRepository extends AppRepository {
     }
     return CatalogPage(items);
   }
+
   @override
   Future<DramaDetail> detail(Drama drama) async => DramaDetail(drama, [
     for (final entry in {

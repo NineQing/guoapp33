@@ -84,8 +84,8 @@ void main() {
           position: Offset(100, 200 - step * 50),
           buttons: kPrimaryButton,
           kind: PointerDeviceKind.touch,
-          timeStamp: const Duration(seconds: 1) +
-              Duration(milliseconds: 60 * step),
+          timeStamp:
+              const Duration(seconds: 1) + Duration(milliseconds: 60 * step),
         ),
       );
     }

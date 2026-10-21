@@ -215,7 +215,8 @@ class PlayerInteractions extends ChangeNotifier {
     if (!_moved || _dragMode != _DragMode.none) return;
     final horizontal =
         delta.dx.abs() > 24 && delta.dx.abs() > delta.dy.abs() * 1.2;
-    final vertical = delta.dy.abs() > 24 && delta.dy.abs() > delta.dx.abs() * 1.2;
+    final vertical =
+        delta.dy.abs() > 24 && delta.dy.abs() > delta.dx.abs() * 1.2;
     if (horizontal && player.state.duration > Duration.zero) {
       _dragMode = _DragMode.seek;
       _seekAnchor = player.state.position;
@@ -253,7 +254,8 @@ class PlayerInteractions extends ChangeNotifier {
         ? const Duration(minutes: 45)
         : duration;
     final fraction = (delta.dx / _paneWidth).clamp(-1.0, 1.0);
-    var target = _seekAnchor +
+    var target =
+        _seekAnchor +
         Duration(microseconds: (span.inMicroseconds * fraction).round());
     if (target < Duration.zero) target = Duration.zero;
     if (target > duration) target = duration;
@@ -413,7 +415,9 @@ class PlayerInteractions extends ChangeNotifier {
     final minutes = value.inMinutes.remainder(60);
     final seconds = value.inSeconds.remainder(60);
     String two(int v) => v.toString().padLeft(2, '0');
-    return hours > 0 ? '$hours:${two(minutes)}:${two(seconds)}' : '${two(minutes)}:${two(seconds)}';
+    return hours > 0
+        ? '$hours:${two(minutes)}:${two(seconds)}'
+        : '${two(minutes)}:${two(seconds)}';
   }
 
   static String _formatDuration(Duration value) {

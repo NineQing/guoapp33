@@ -24,8 +24,7 @@ enum AppPlayer {
   );
 }
 
-AppPlayer selectedPlayer(LocalStore store) =>
-    AppPlayer.parse(store.player);
+AppPlayer selectedPlayer(LocalStore store) => AppPlayer.parse(store.player);
 
 Future<void> setSelectedPlayer(LocalStore store, AppPlayer player) =>
     store.setPlayer(player.id);
@@ -47,33 +46,35 @@ Route<T> buildPlayerRoute<T>(
 }) {
   if (selectedPlayer(store) == AppPlayer.xigua) {
     return playerRoute(
-      XiguaPlayerScreen(
-        detail: detail,
-        initialIndex: initialIndex,
-        initialPosition: initialPosition,
-        localOnly: localOnly,
-        allowOnlineFallback: allowOnlineFallback,
-        mediaId: mediaId,
-        handoff: handoff,
-        repository: repository,
-        store: store,
-        searchKeyword: searchKeyword,
-      ),
-    ) as Route<T>;
+          XiguaPlayerScreen(
+            detail: detail,
+            initialIndex: initialIndex,
+            initialPosition: initialPosition,
+            localOnly: localOnly,
+            allowOnlineFallback: allowOnlineFallback,
+            mediaId: mediaId,
+            handoff: handoff,
+            repository: repository,
+            store: store,
+            searchKeyword: searchKeyword,
+          ),
+        )
+        as Route<T>;
   }
   return playerRoute(
-    PlayerScreen(
-      detail: detail,
-      initialIndex: initialIndex,
-      initialPosition: initialPosition,
-      localOnly: localOnly,
-      allowOnlineFallback: allowOnlineFallback,
-      mediaId: mediaId,
-      handoff: handoff,
-      repository: repository,
-      store: store,
-    ),
-  ) as Route<T>;
+        PlayerScreen(
+          detail: detail,
+          initialIndex: initialIndex,
+          initialPosition: initialPosition,
+          localOnly: localOnly,
+          allowOnlineFallback: allowOnlineFallback,
+          mediaId: mediaId,
+          handoff: handoff,
+          repository: repository,
+          store: store,
+        ),
+      )
+      as Route<T>;
 }
 
 Future<T?> pushPlayer<T>(

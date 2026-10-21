@@ -39,6 +39,7 @@ class FixtureRepository extends AppRepository {
     }
     return CatalogPage(items);
   }
+
   @override
   Future<String> cover(Drama drama, {bool force = false}) async =>
       throw AppFailure('合成剧集没有远程海报');

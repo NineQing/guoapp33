@@ -1535,8 +1535,8 @@ class _HomeScreenState extends State<HomeScreen> {
               onCancel: () => unawaited(widget.repository.cancelSuggestions()),
               onSearch: _submitSearch,
               crossSource: _crossSourceSearch,
-              onCrossSourceChanged: _crossSourceSearch ||
-                      _visibleSourceIds.isNotEmpty
+              onCrossSourceChanged:
+                  _crossSourceSearch || _visibleSourceIds.isNotEmpty
                   ? _changeCrossSource
                   : null,
               crossSourceCount: _visibleSourceIds.length,

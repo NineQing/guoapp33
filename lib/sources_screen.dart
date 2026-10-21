@@ -202,13 +202,11 @@ class _SourcesScreenState extends State<SourcesScreen> {
                       onTap: () => Navigator.push<void>(
                         context,
                         MaterialPageRoute<void>(
-                          builder: (_) => SourceVisibilityScreen(
-                            store: widget.store,
-                          ),
+                          builder: (_) =>
+                              SourceVisibilityScreen(store: widget.store),
                         ),
                       ),
                     ),
-                  ),
                   ),
                   Card(
                     key: const ValueKey('custom-sources-entry'),
@@ -562,9 +560,7 @@ class _SourceVisibilityScreenState extends State<SourceVisibilityScreen> {
               children: [
                 const Padding(
                   padding: EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    '关闭的站源不会出现在首页站源分组与目录中；更新、检测与已缓存内容不受影响，随时可以重新开启。',
-                  ),
+                  child: Text('关闭的站源不会出现在首页站源分组与目录中；更新、检测与已缓存内容不受影响，随时可以重新开启。'),
                 ),
                 if (sources.isEmpty)
                   const Padding(
@@ -584,7 +580,9 @@ class _SourceVisibilityScreenState extends State<SourceVisibilityScreen> {
                                 Expanded(
                                   child: Text(
                                     group.name,
-                                    style: Theme.of(context).textTheme.titleMedium,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
                                   ),
                                 ),
                               ],

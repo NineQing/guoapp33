@@ -81,7 +81,8 @@ abstract class AppRepository {
     int quality = 0,
     int route = 0,
     bool adBlock = true,
-  }) => preload(drama, episode, quality: quality, route: route, adBlock: adBlock);
+  }) =>
+      preload(drama, episode, quality: quality, route: route, adBlock: adBlock);
   Future<void> cancelHandoff() async {}
   Future<ResourceSettings> resourceSettings() async => const ResourceSettings();
   Future<ResourceSettings> saveResourceSettings(
@@ -146,17 +147,18 @@ abstract class AppRepository {
   }) async => throw AppFailure('当前环境不支持自定义源');
   Future<void> removeCustomSource(String id) async =>
       throw AppFailure('当前环境不支持自定义源');
+
   /// 导出全部自定义源为 JSON 文本（含 XBPQ 规则原文）。
-  Future<String> exportCustomSources() async =>
-      throw AppFailure('当前环境不支持自定义源');
+  Future<String> exportCustomSources() async => throw AppFailure('当前环境不支持自定义源');
+
   /// 导入自定义源文本，返回 {added, updated, skipped, failed} 计数与原因。
   /// content 既可以是本地 JSON/TXT 文本，也可以是一行远程配置地址，
   /// 原生核心会自动识别并抓取。
   Future<Map<String, dynamic>> importCustomSources(String content) async =>
       throw AppFailure('当前环境不支持自定义源');
+
   /// 恢复默认：删除全部自定义源，仅保留内置源。返回删除数量。
-  Future<int> resetCustomSources() async =>
-      throw AppFailure('当前环境不支持自定义源');
+  Future<int> resetCustomSources() async => throw AppFailure('当前环境不支持自定义源');
   Future<List<String>> suggestions(String query) async => const [];
   Future<Map<String, dynamic>> storage() async => {};
   Future<String> downloadDirectory() async =>
@@ -203,7 +205,8 @@ abstract class AppRepository {
     int quality = 0,
     int route = 0,
     bool adBlock = true,
-  }) => resolve(drama, episode, quality: quality, route: route, adBlock: adBlock);
+  }) =>
+      resolve(drama, episode, quality: quality, route: route, adBlock: adBlock);
   Future<void> initialize();
   Future<CatalogPage> catalog(
     String source, {
@@ -214,6 +217,7 @@ abstract class AppRepository {
   });
   // 跨源聚合搜索：并发打所有给定站源，返回按标题/年份/集数归一去重后的结果。
   Future<CatalogPage> searchAcross(List<String> sources, String query);
+
   /// 搜索结果增量轮询（西瓜播放器推荐用）。guoapp3 核心无此通道，默认返回空页，
   /// 调用方以首轮完整结果为准。
   Future<CatalogPage> searchProgress(String source, String query) async =>
@@ -511,9 +515,7 @@ class NativeRepository extends AppRepository {
       'base': base,
       'rule': rule,
     });
-    return CustomSourceSite.fromJson(
-      Map<String, dynamic>.from(result as Map),
-    );
+    return CustomSourceSite.fromJson(Map<String, dynamic>.from(result as Map));
   }
 
   @override
@@ -531,9 +533,7 @@ class NativeRepository extends AppRepository {
       'base': base,
       'rule': rule,
     });
-    return CustomSourceSite.fromJson(
-      Map<String, dynamic>.from(result as Map),
-    );
+    return CustomSourceSite.fromJson(Map<String, dynamic>.from(result as Map));
   }
 
   @override

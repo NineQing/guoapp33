@@ -626,9 +626,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     try {
       final built = widget.playerBuilder?.call(detail, index, position);
       if (built != null) {
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => built),
-        );
+        await Navigator.of(
+          context,
+        ).push(MaterialPageRoute<void>(builder: (_) => built));
       } else {
         await pushPlayer<void>(
           context,

@@ -15,7 +15,7 @@ enum PlayerMenuSection {
   quality,
   route,
   pictureQuality,
-  settings
+  settings,
 }
 
 class PlayerMenu extends StatefulWidget {

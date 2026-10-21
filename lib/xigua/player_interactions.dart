@@ -260,7 +260,10 @@ class PlayerInteractions extends ChangeNotifier {
       }
     }
     if (_brightnessDragging && _paneHeight > 0) {
-      final value = (_brightnessAnchor - delta.dy / _paneHeight).clamp(.01, 1.0);
+      final value = (_brightnessAnchor - delta.dy / _paneHeight).clamp(
+        .01,
+        1.0,
+      );
       unawaited(onBrightness?.call(value));
       hint('亮度 ${(value * 100).round()}%', persistent: true);
     }

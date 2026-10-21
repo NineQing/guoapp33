@@ -220,4 +220,3 @@ String searchKeyword(String title) {
   value = value.replaceAll(RegExp(r'[\s·\-—_~～|/\\]+$'), '');
   return value.trim();
 }
-

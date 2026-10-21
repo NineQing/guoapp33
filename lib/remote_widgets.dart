@@ -41,8 +41,8 @@ class RemoteTextInput extends StatelessWidget {
 
   KeyEventResult _key(FocusNode node, KeyEvent event, bool television) {
     final focus = FocusManager.instance.primaryFocus;
-    final editable =
-        focus?.context?.findAncestorStateOfType<EditableTextState>();
+    final editable = focus?.context
+        ?.findAncestorStateOfType<EditableTextState>();
     if (editable == null ||
         (event is! KeyDownEvent && event is! KeyRepeatEvent)) {
       return KeyEventResult.ignored;

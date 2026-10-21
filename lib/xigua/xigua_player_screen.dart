@@ -1630,7 +1630,8 @@ class _PlayerScreenState extends State<XiguaPlayerScreen>
     unawaited(_seekTo(target));
   }
 
-  bool get _androidBrightness => defaultTargetPlatform == TargetPlatform.android;
+  bool get _androidBrightness =>
+      defaultTargetPlatform == TargetPlatform.android;
 
   double? _currentBrightness() {
     return _cachedBrightness;

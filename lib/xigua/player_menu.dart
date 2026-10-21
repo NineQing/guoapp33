@@ -9,13 +9,7 @@ import 'package:duanju_app/picture_quality_ui.dart';
 import 'package:duanju_app/video_enhancement.dart';
 import 'package:duanju_app/video_enhancement_settings.dart';
 
-enum PlayerMenuSection {
-  episodes,
-  speed,
-  quality,
-  pictureQuality,
-  settings
-}
+enum PlayerMenuSection { episodes, speed, quality, pictureQuality, settings }
 
 class PlayerMenu extends StatefulWidget {
   const PlayerMenu({

@@ -111,8 +111,9 @@ class PlaybackPreferences {
       swipeSeekSeconds: swipeSeekSeconds,
       autoPictureInPicture: autoPictureInPicture,
       enhancement: VideoEnhancementPreferences.fromJson(value['enhancement']),
-      pictureQuality:
-          PictureQualityPreferences.fromJson(value['pictureQuality']),
+      pictureQuality: PictureQualityPreferences.fromJson(
+        value['pictureQuality'],
+      ),
       televisionDecoder:
           TelevisionDecoder.values.asNameMap()[value['televisionDecoder']] ??
           TelevisionDecoder.optimized,
