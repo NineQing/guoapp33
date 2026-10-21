@@ -123,8 +123,7 @@ body {
 }
 .episodes a:hover { border-color: var(--accent); }
 .player-wrap { max-width: 900px; margin: 0 auto; }
-/* 画质增强舞台：相对定位，让 Anime4K 覆盖 canvas / 锐化滤镜精准叠在 video 上、不盖到下方控制条。
-   video 保持原有 100% 宽度布局，canvas 用 inset:0 填满与视频同尺寸，二者自动对齐。 */
+/* 画质增强舞台：相对定位，让锐化滤镜与提示浮层精准叠在 video 上、不盖到下方控制条。 */
 .player-stage { position: relative; }
 .player-stage video { width: 100%; background: #000; border-radius: 10px; display: block; }
 .player-stage video.portrait {
@@ -134,15 +133,9 @@ body {
 @media (max-height: 560px) {
   .player-stage video.portrait { height: calc(100vh - 150px); width: auto; }
 }
-/* Anime4K 2× 输出 canvas：铺满视频盒叠在正上方，隐藏时不挡交互 */
-.player-stage .picture-quality-canvas {
-  position: absolute; inset: 0; z-index: 2;
-  width: 100%; height: 100%;
-  visibility: hidden; pointer-events: none;
-}
 /* 锐化 SVG 滤镜定义：移出可视区，仅作为 video 的 filter 引用源 */
 .player-stage .picture-quality-svg { position: absolute; width: 0; height: 0; overflow: hidden; }
-/* 画质档切换失败 / 显卡不支持时的提示，叠在画面下方 */
+/* 画质档切换提示，叠在画面下方，显示 2 秒后自动消失 */
 .player-stage .picture-quality-note {
   position: absolute; bottom: 0; left: 0; right: 0; z-index: 3;
   background: rgba(0, 0, 0, 0.72); color: #ffd54d; font-size: 12px;
