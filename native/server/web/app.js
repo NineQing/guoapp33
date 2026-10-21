@@ -2302,11 +2302,24 @@ function bindCustomSourcesView(items) {
   });
 }
 
-// 网络地址导入栏的默认配置地址：打开弹窗即预填，也可点「使用默认地址」恢复，
-// 输入框保留且可手动改成任意地址。
-var CS_IMPORT_DEFAULT_URL =
-  'https://cfkua.wokaotianshi.eu.org/https://raw.githubusercontent.com/' +
-  'wokaotianshi123/wokaotianshi123.github.io/refs/heads/main/hongguo/config.json';
+// 网络地址导入栏的预设配置地址：打开弹窗即预填第一项，也可点选切换，
+// 输入框保留且可手动改成任意地址。预设本身是「加速链接+网址」拼接形态，
+// 核心会作为整体识别抓取（见 isSplicedAcceleratorURL）。
+var CS_IMPORT_PRESETS = [
+  {
+    name: '网页',
+    url:
+      'https://cfkua.wokaotianshi.eu.org/https://raw.githubusercontent.com/' +
+      'wokaotianshi123/wokaotianshi123.github.io/refs/heads/main/hongguo/config.json',
+  },
+  {
+    name: '采集',
+    url:
+      'https://cfkua.wokaotianshi.eu.org/https://raw.githubusercontent.com/' +
+      'wokaotianshi123/jgcj/refs/heads/main/hongguo.json',
+  },
+];
+var CS_IMPORT_DEFAULT_URL = CS_IMPORT_PRESETS[0].url;
 
 function openCustomSourceImportUrlDialog() {
   var overlay = document.createElement('div');
@@ -2321,9 +2334,12 @@ function openCustomSourceImportUrlDialog() {
     'style="width:100%;min-height:70px;font-family:monospace;font-size:12px;box-sizing:border-box;background:var(--bg,#12161f);color:inherit;border:1px solid var(--border,#333);border-radius:8px;padding:8px">' +
     escapeHTML(CS_IMPORT_DEFAULT_URL) +
     '</textarea>' +
-    '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-    '<span style="font-size:12px;opacity:0.75">默认地址：</span>' +
-    '<button type="button" class="btn" id="cs-import-default" style="font-size:12px;padding:4px 10px">使用默认地址</button>' +
+    '<div id="cs-import-presets" style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+    '<span style="font-size:12px;opacity:0.75">预设地址（点击填入，仍可手动改）：</span>' +
+    CS_IMPORT_PRESETS.map(function (preset, index) {
+      return '<button type="button" class="btn" data-preset="' + index + '" style="font-size:12px;padding:4px 10px">' +
+        escapeHTML(preset.name) + '</button>';
+    }).join('') +
     '</div>' +
     '<div id="cs-import-error" style="color:#ff8b90;font-size:12px;min-height:18px;margin-top:8px"></div>' +
     '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">' +
@@ -2336,13 +2352,26 @@ function openCustomSourceImportUrlDialog() {
   var errorBox = document.getElementById('cs-import-error');
   var goButton = document.getElementById('cs-import-go');
   var cancelButton = document.getElementById('cs-import-cancel');
-  var defaultButton = document.getElementById('cs-import-default');
-  if (defaultButton && urlInput) {
-    defaultButton.addEventListener('click', function () {
-      urlInput.value = CS_IMPORT_DEFAULT_URL;
-      errorBox.textContent = '';
-      urlInput.focus();
-      urlInput.setSelectionRange(urlInput.value.length, urlInput.value.length);
+  function applyPreset(index) {
+    var preset = CS_IMPORT_PRESETS[index];
+    if (!preset || !urlInput) {
+      return;
+    }
+    urlInput.value = preset.url;
+    errorBox.textContent = '';
+    urlInput.focus();
+    urlInput.setSelectionRange(urlInput.value.length, urlInput.value.length);
+  }
+  var presetBox = document.getElementById('cs-import-presets');
+  if (presetBox && urlInput) {
+    presetBox.addEventListener('click', function (event) {
+      var target = event.target;
+      while (target && target !== presetBox && !target.hasAttribute('data-preset')) {
+        target = target.parentNode;
+      }
+      if (target && target !== presetBox) {
+        applyPreset(parseInt(target.getAttribute('data-preset'), 10));
+      }
     });
   }
   if (urlInput) urlInput.focus();

@@ -24,13 +24,20 @@ class CustomSourceImportPreset {
   final String url;
 }
 
-/// 内置预设：默认直接使用该远程配置，无需用户手输长地址。
+/// 内置预设：默认填入第一项「网页」，也可点选「采集」切换；输入框仍可手动
+/// 修改成任意地址。预设本身是「加速链接+网址」拼接形态，核心会作为整体识别
+/// 抓取，不会只取斜杠前的加速域名。
 const List<CustomSourceImportPreset>
 customSourceImportPresets = <CustomSourceImportPreset>[
   CustomSourceImportPreset(
-    '默认配置',
+    '网页',
     'https://cfkua.wokaotianshi.eu.org/https://raw.githubusercontent.com/'
         'wokaotianshi123/wokaotianshi123.github.io/refs/heads/main/hongguo/config.json',
+  ),
+  CustomSourceImportPreset(
+    '采集',
+    'https://cfkua.wokaotianshi.eu.org/https://raw.githubusercontent.com/'
+        'wokaotianshi123/jgcj/refs/heads/main/hongguo.json',
   ),
 ];
 

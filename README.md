@@ -2,9 +2,18 @@
 
 自编译版加入 韩小圈，鬼片，A123（青空已下线移除）
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.2+95（未验证开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.3+96（未验证开发快照）**。
 
-本轮（1.4.2+95）参照 guoappxx 项目，**移除红果源「取流方式选择项」，红果取流统一跟随 guoappxx 的无条件链路**（App CENC → 网页 `video_player_info` → 备用接口）。此前 1.3.0+87 引入的「红果源播放形式」下拉（红果源1 App 优先 / 红果源2 网页优先，开关 `hongguoPlayMode`）及其配套实现已整体下线：
+本轮（1.4.3+96）集中处理自定义源的四项优化，全部落在共享 Go 核心 `native/core/provider_custom_maccms.go`——Android / iOS / macOS / Windows 四端 App 与本地 Web 服务器版都经 `core.NativeRequest` 调它，改核心即全平台生效；Flutter 侧无副本。
+
+1. 自定义源去除 32 个数量上限。删除 `customSourceMaxCount=32` 常量与 `add()` 里的数量检查，自定义源不再有数量限制（规则内容 256KB、导入文件 8MB 的单条 / 单文件上限保持不变）。
+2. 「加速链接 + 网址」拼接地址作为整体识别处理。此前 `customSourceImportBase` 会把任何地址收敛成 `scheme://host`，形如 `https://cfkua.wokaotianshi.eu.org/https://caiji.maotaizy.cc` 这类「加速域名 / 真实网址」拼接串会被截成 `https://cfkua.wokaotianshi.eu.org`，丢掉拼接部分导致取流指向错误的加速域名。新增 `isSplicedAcceleratorURL()`：当字符串出现第二个 `://` 且 `url.Parse` 后路径本身以 `http(s)://` 开头即判为拼接形态，`customSourceImportBase` 命中时整体保留（去尾 `/`），普通 maccms api / 裸域名仍按旧逻辑收敛到站点根，避免误判。
+3. 导入导出 XBPQ 规则去转义并保证 round-trip。导出时 `Rule` 字段由 `string` 改为 `any`，新增 `exportRuleValue()`——规则是合法规则 JSON 时还原成嵌套对象随行，避免整段被当成字符串、正文里满屏 `\"` 转义；解析失败才原样按字符串导出。更新判定由 `existing.Rule == draft.Rule` 改为 `canonicalXBPQRule()` 比较（新增 `normalizeXBPQCanonical` 递归做键排序紧凑 JSON 规整），使「编辑器按原文保存 → 导出成嵌套对象 → 再导入」能命中**更新**而非误报「已存在跳过」；导入侧 `customSourceRuleFromMap` 的 ext 分支本就兼容对象 / 字符串两种形态，round-trip 不被破坏。导出文件可被本地 Web 版与四端 App 重新识别导入。
+4. 「从网络地址导入」框做成两个可切换预设 + 保留手动输入框。预设一「网页」为 `https://cfkua.wokaotianshi.eu.org/https://raw.githubusercontent.com/wokaotianshi123/wokaotianshi123.github.io/refs/heads/main/hongguo/config.json`（默认填入），预设二「采集」为 `https://cfkua.wokaotianshi.eu.org/https://raw.githubusercontent.com/wokaotianshi123/jgcj/refs/heads/main/hongguo.json`。本地 Web 版（`native/server/web/app.js`）把原单一默认地址按钮改成两个可点切的预设按钮，`textarea` 手动输入框保留；App 四端（`lib/custom_sources_screen.dart`，四端共用同一份 Flutter 代码）把预设列表由单条「默认配置」改为「网页 / 采集」两条，复用既有预设切换 chip 机制，输入框仍可手动改成任意地址。两个预设本身即「加速链接 + 网址」拼接形态，依赖第 2 项的核心整体识别抓取。
+
+验证：Go `go build ./...` 与 `go vet ./core ./server` 通过；自定义源 `go test` 共 10 例全部通过（含 3 例新增 `TestCustomSourceSplicedAcceleratorPreserved` / `TestCustomSourceNoCountLimit` / `TestCustomSourceExportNestedRuleNoEscapes`），拼接识别另用 `go run` 实测确认拼接串保留、`api.php/provide/vod` 与普通域名仍收敛；Web 前端 `node --check native/server/web/app.js` 通过；Dart `dart analyze` 仅剩 2 条既有 info 级 lint（非 error / warning，不影响 CI）。全量 `go test ./core` 中 6 个失败均为既有 flaky / 需联网用例（HLS 重定向、弹幕 emoji、legacy session、红果榜单、目录缓存、剧源分类），不在本轮改动文件内，与本轮无关。四端 App 真实导入 / 导出 / 取流与 Web 版预设切换的实际表现待重新构建安装与浏览器验收；按约定本轮为未验证开发快照。
+
+上一轮（1.4.2+95）参照 guoappxx 项目，**移除红果源「取流方式选择项」，红果取流统一跟随 guoappxx 的无条件链路**（App CENC → 网页 `video_player_info` → 备用接口）。此前 1.3.0+87 引入的「红果源播放形式」下拉（红果源1 App 优先 / 红果源2 网页优先，开关 `hongguoPlayMode`）及其配套实现已整体下线：
 1. 红果取流（`native/core/provider_hongguo.go`、`provider_hongguo_native_media.go`、`app_settings.go`）。删除模式切换常量 `hongguoPlayModeAppFirst/WebFirst`、App 优先链路 `resolveHongguoMediaAppFirst` / `resolveHongguoWebMediaAppFirst` / `finalizeHongguoMedia` 与 ld+json 网页取流辅助函数；`resolveHongguoMedia` 改回 guoappxx 的无条件三档链，单集 CENC 走 `video_model/v1`、网页回退取 `video_player_info`、再落备用接口。删除 guoappxx 不存在的 `provider_hongguo_multi_media.go`、`provider_hongguo_spade.go`（spade_a 地址解密）及其测试。三个文件与 guoappxx 逐字节一致。
 2. 设置与状态（`native/core/app_settings.go`、`app_runtime.go`）。移除 `HongguoPlayMode` 字段、其校验与 `applyResourceSettings` 写入，移除 `Downloader` 的 `hongguoPlayMu` / `hongguoPlaySetting`；`resource-settings.json` 不再持久化红果播放形式。
 3. 界面（`lib/resource_settings.dart`、`lib/sources_screen.dart`）。删 `ResourceSettings.hongguoPlayMode` 字段；站源管理页删除「红果源播放形式」卡片及 `_loadResource` / `_saveHongguoPlayMode` 与相关状态。

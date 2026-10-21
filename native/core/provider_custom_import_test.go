@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -150,7 +151,7 @@ func TestCustomSourceExportImportRoundTrip(t *testing.T) {
 		Sites  []struct {
 			Name string `json:"name"`
 			URL  string `json:"url"`
-			Rule string `json:"rule"`
+			Rule any    `json:"rule"`
 		} `json:"sites"`
 	}
 	if err := json.Unmarshal([]byte(content), &envelope); err != nil {
@@ -159,19 +160,28 @@ func TestCustomSourceExportImportRoundTrip(t *testing.T) {
 	if envelope.Format != customSourceExportFormat || len(envelope.Sites) != 2 {
 		t.Fatalf("导出结构错误: %+v", envelope)
 	}
-	// 规则必须原样随行
+	// 规则应以嵌套 JSON 对象形式随行（不再整段转义成字符串满屏 \"）
 	var ruleSite *struct {
 		Name string `json:"name"`
 		URL  string `json:"url"`
-		Rule string `json:"rule"`
+		Rule any    `json:"rule"`
 	}
 	for index := range envelope.Sites {
-		if envelope.Sites[index].Rule != "" {
+		if envelope.Sites[index].Rule != nil && envelope.Sites[index].Rule != "" {
 			ruleSite = &envelope.Sites[index]
 		}
 	}
-	if ruleSite == nil || !strings.Contains(ruleSite.Rule, "主页url") {
-		t.Fatal("导出未包含 XBPQ 规则原文")
+	if ruleSite == nil {
+		t.Fatal("导出未包含 XBPQ 规则")
+	}
+	if ruleObject, isObject := ruleSite.Rule.(map[string]any); !isObject {
+		t.Fatalf("规则应以嵌套对象导出（去转义），实际 %T: %v", ruleSite.Rule, ruleSite.Rule)
+	} else if ruleObject["主页url"] == nil {
+		t.Fatalf("导出的规则对象缺少「主页url」: %v", ruleObject)
+	}
+	// 内容里不应再出现整段被转义的 \"主页url\" 字符串形态
+	if strings.Contains(content, `\"主页url\"`) {
+		t.Fatal("导出仍含转义后的规则字符串，未去转义")
 	}
 	// 新引擎导入同一份导出文件
 	fresh := newCustomTestEngine(t)
@@ -274,5 +284,84 @@ func TestCustomSourceImportGarbageFails(t *testing.T) {
 	}
 	if _, err := engine.importCustomMaccmsSources(""); err == nil {
 		t.Fatal("空内容应失败")
+	}
+}
+
+func TestCustomSourceSplicedAcceleratorPreserved(t *testing.T) {
+	engine := newCustomTestEngine(t)
+	// 加速链接+网址拼接形态：必须作为整体保留，不能只取斜杠前的加速域名。
+	spliced := "https://cfkua.wokaotianshi.eu.org/https://caiji.maotaizy.cc"
+	record, err := engine.addCustomMaccmsSource("拼接源", spliced, "")
+	if err != nil {
+		t.Fatalf("拼接地址添加失败: %v", err)
+	}
+	if record.Base != spliced {
+		t.Fatalf("拼接地址应整体保留，实际 %q", record.Base)
+	}
+	// 导入路径同样要识别并保留。
+	fresh := newCustomTestEngine(t)
+	result, err := fresh.importCustomMaccmsSources(
+		`{"name":"拼接站","url":"https://cfkua.wokaotianshi.eu.org/https://caiji.maotaizy.cc"}`)
+	if err != nil {
+		t.Fatalf("拼接地址导入失败: %v", err)
+	}
+	if len(result.Added) != 1 || result.Added[0].Base != spliced {
+		t.Fatalf("导入未整体保留拼接地址: %+v", result.Added)
+	}
+	// 普通 maccms api 地址仍应收敛到站点根，避免误判为拼接。
+	result2, err := fresh.importCustomMaccmsSources(
+		`{"name":"api站","api":"https://plain.example.com/api.php/provide/vod/"}`)
+	if err != nil {
+		t.Fatalf("api 地址导入失败: %v", err)
+	}
+	if len(result2.Added) != 1 || result2.Added[0].Base != "https://plain.example.com" {
+		t.Fatalf("api 地址应收敛到根: %+v", result2.Added)
+	}
+}
+
+func TestCustomSourceNoCountLimit(t *testing.T) {
+	engine := newCustomTestEngine(t)
+	// 32 上限已移除：一次导入 40 站应全部成功，不再有「超出上限」的跳过。
+	lines := make([]string, 0, 40)
+	for index := 0; index < 40; index++ {
+		lines = append(lines, fmt.Sprintf("https://s%02d.example.com", index))
+	}
+	result, err := engine.importCustomMaccmsSources(strings.Join(lines, "\n"))
+	if err != nil {
+		t.Fatalf("批量导入失败: %v", err)
+	}
+	if len(result.Added) != 40 {
+		t.Fatalf("40 站应全部导入，实际 %d: skipped=%v failed=%v",
+			len(result.Added), result.Skipped, result.Failed)
+	}
+	if len(engine.customMaccmsSources()) != 40 {
+		t.Fatalf("注册表应有 40 个源，实际 %d", len(engine.customMaccmsSources()))
+	}
+}
+
+func TestCustomSourceExportNestedRuleNoEscapes(t *testing.T) {
+	engine := newCustomTestEngine(t)
+	if _, err := engine.addCustomMaccmsSource("规则站", "", xbpqCutRuleJSON); err != nil {
+		t.Fatalf("添加规则源失败: %v", err)
+	}
+	content, err := engine.exportCustomMaccmsSources()
+	if err != nil {
+		t.Fatalf("导出失败: %v", err)
+	}
+	// 规则以嵌套对象随行，正文里不应再出现整段被转义的 \"主页url\"。
+	if strings.Contains(content, `\"主页url\"`) {
+		t.Fatalf("导出规则仍带转义，未还原成对象: %s", content)
+	}
+	// round-trip：新引擎导入自己导出的内容，规则应命中「更新」而非「已存在跳过」。
+	fresh := newCustomTestEngine(t)
+	if _, err := fresh.importCustomMaccmsSources(content); err != nil {
+		t.Fatalf("首次导入失败: %v", err)
+	}
+	again, err := fresh.importCustomMaccmsSources(content)
+	if err != nil {
+		t.Fatalf("二次导入失败: %v", err)
+	}
+	if len(again.Updated) != 1 || len(again.Added) != 0 {
+		t.Fatalf("二次导入应更新而非新增: %+v", again)
 	}
 }

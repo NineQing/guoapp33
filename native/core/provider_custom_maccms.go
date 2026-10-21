@@ -30,8 +30,6 @@ import (
 
 const customSourcePrefix = "custom:"
 
-const customSourceMaxCount = 32
-
 const customSourceMaxBytes = 256 * 1024
 
 type customMaccmsSource struct {
@@ -154,9 +152,6 @@ func (registry *customMaccmsRegistry) add(name, base, rule string) (customMaccms
 	}
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
-	if len(registry.sources) >= customSourceMaxCount {
-		return customMaccmsSource{}, fmt.Errorf("自定义源最多 %d 个，请先删除再添加", customSourceMaxCount)
-	}
 	baseKey := strings.ToLower(base)
 	for _, record := range registry.sources {
 		if strings.ToLower(record.Base) == baseKey {
@@ -296,11 +291,11 @@ func (engine *nativeEngine) exportCustomMaccmsSources() (string, error) {
 	type exportItem struct {
 		Name string `json:"name"`
 		URL  string `json:"url"`
-		Rule string `json:"rule,omitempty"`
+		Rule any    `json:"rule,omitempty"`
 	}
 	items := make([]exportItem, 0, len(records))
 	for _, record := range records {
-		items = append(items, exportItem{Name: record.Name, URL: record.Base, Rule: record.Rule})
+		items = append(items, exportItem{Name: record.Name, URL: record.Base, Rule: exportRuleValue(record.Rule)})
 	}
 	payload := struct {
 		Format  string       `json:"format"`
@@ -323,6 +318,65 @@ func (engine *nativeEngine) exportCustomMaccmsSources() (string, error) {
 
 func customSourceExportFilename() string {
 	return "duanju-custom-sources-" + time.Now().Format("2006-01-02") + ".json"
+}
+
+// exportRuleValue 把 XBPQ 规则原文在导出时尽量还原成嵌套 JSON 对象，
+// 避免整段被当成字符串、满屏 \" 转义；解析失败则原样作为字符串导出。
+// 导入侧 customSourceRuleFromMap 的 ext 分支对对象 / 字符串两种形态都兼容，
+// 因此这样导出既能读得更干净，又保证 round-trip 不被破坏。
+func exportRuleValue(rule string) any {
+	rule = strings.TrimSpace(rule)
+	if rule == "" {
+		return ""
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(rule), &decoded); err == nil {
+		return decoded
+	}
+	return rule
+}
+
+// canonicalXBPQRule 把 XBPQ 规则规整成「键排序紧凑 JSON」，用于判断两条规则
+// 是否等价（键序 / 空白 / 字符串转义差异不影响）。规则不是合法 JSON 时按原文比较，
+// 使「新增编辑器存原文 → 导出成嵌套对象 → 再导入」能命中更新而非误报已存在。
+func canonicalXBPQRule(rule string) string {
+	trimmed := strings.TrimSpace(rule)
+	if trimmed == "" {
+		return ""
+	}
+	var decoded any
+	if json.Unmarshal([]byte(trimmed), &decoded) != nil {
+		return trimmed
+	}
+	body, err := json.Marshal(normalizeXBPQCanonical(decoded))
+	if err != nil {
+		return trimmed
+	}
+	return string(body)
+}
+
+// normalizeXBPQCanonical 递归把规则规整成键排序的 map / []，保证二次序列化一致。
+func normalizeXBPQCanonical(node any) any {
+	switch typed := node.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		result := make(map[string]any, len(typed))
+		for _, key := range keys {
+			result[key] = normalizeXBPQCanonical(typed[key])
+		}
+		return result
+	case []any:
+		for index := range typed {
+			typed[index] = normalizeXBPQCanonical(typed[index])
+		}
+		return typed
+	default:
+		return node
+	}
 }
 
 // customSourceIsRemoteURL 判断整段内容是否为「一行远程配置地址」。
@@ -448,7 +502,7 @@ func (engine *nativeEngine) importCustomMaccmsSources(content string) (customSou
 			result.Failed = append(result.Failed, name+"：无法确定站点网址")
 			continue
 		}
-		if existing, found := engine.customRegistry.get(customMaccmsID(base)); found && existing.Rule == draft.Rule {
+		if existing, found := engine.customRegistry.get(customMaccmsID(base)); found && canonicalXBPQRule(existing.Rule) == canonicalXBPQRule(draft.Rule) {
 			record, err := engine.updateCustomMaccmsSource(existing.ID, name, base, draft.Rule)
 			if err != nil {
 				result.Failed = append(result.Failed, name+"："+err.Error())
@@ -488,7 +542,9 @@ func customSourceImportName(name, base string) string {
 	return "自定义源"
 }
 
-// customSourceImportBase 补齐协议并把 maccms api 地址收敛成站点根地址。
+// customSourceImportBase 补齐协议；对 maccms api 地址收敛成站点根地址，
+// 但对「加速链接+网址」拼接形态（路径里再嵌一个完整 http(s) 网址）作为整体保留，
+// 不能只取 scheme://host 丢掉拼接部分，否则取流会指向错误的加速域名。
 func customSourceImportBase(base, rule string) string {
 	base = strings.TrimSpace(base)
 	if rule != "" {
@@ -510,11 +566,33 @@ func customSourceImportBase(base, rule string) string {
 			base = "https://" + base
 		}
 	}
+	// 加速链接拼接形态：https://加速域名/https://真实网址，必须整体保留。
+	if isSplicedAcceleratorURL(base) {
+		return strings.TrimRight(base, "/")
+	}
 	parsed, err := url.Parse(base)
 	if err != nil || parsed.Host == "" {
 		return ""
 	}
 	return parsed.Scheme + "://" + parsed.Host
+}
+
+// isSplicedAcceleratorURL 判断是否为「加速链接 + 网址」拼接形态。
+// 形如 https://cfkua.example.org/https://caiji.example.com：路径本身又是一个
+// 完整 http(s) 网址，特征是字符串里出现第二个 ://。这类地址必须整体保留。
+func isSplicedAcceleratorURL(base string) bool {
+	if strings.Count(base, "://") < 2 {
+		return false
+	}
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme == "" {
+		return false
+	}
+	rest := strings.TrimLeft(parsed.RawPath, "/")
+	if rest == "" {
+		rest = strings.TrimLeft(parsed.Path, "/")
+	}
+	return strings.HasPrefix(rest, "http://") || strings.HasPrefix(rest, "https://")
 }
 
 var customSourceEmojiPattern = regexp.MustCompile(`[^\p{L}\p{N}\p{Han}\-_·. ]`)
