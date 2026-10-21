@@ -2,9 +2,17 @@
 
 自编译版加入 韩小圈，鬼片，A123（青空已下线移除）
 
-Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.2+94（未验证开发快照）**。
+Flutter 多端独立短剧应用，原名“短剧库 APP”。站源请求、解析、下载和播放均在设备上完成，不依赖旧项目或自建服务。当前源码版本：**1.4.2+95（未验证开发快照）**。
 
-本轮（1.4.2+94）修复 Android 电视端与 macOS / Windows 桌面端「搜索焦点跳不出搜索框」。根因两层：一是 `SearchInput` 的 `RawAutocomplete` 在联想下拉打开时把上下方向键映射为选项高亮导航且夹在 0..N-1，永远无法越界跳出输入框；二是裸 `TextField`（下载页、观看记录 / 追剧页搜索）在桌面与电视端被 `DefaultTextEditingShortcuts` 的「上下移光标到相邻行」动作吞掉方向键——单行框里移动无效却返回 handled，焦点原地卡死。修复：① 参考 guoappxian 项目移植 `RemoteTextInput`（`lib/remote_widgets.dart`），以后代 `Focus.onKeyEvent` 在文本框祖先层抢先处理方向键——上 / 下键 `focusInDirection` 移出搜索框、返回 / Esc 先尝试向下再向上移出并收起输入法、电视端确认键 `requestKeyboard()` 重新唤起输入法；生效范围为电视模式与 macOS / Windows / Linux 桌面（Android 手机不受影响），并加「输入法组字中（composing 非空）放行方向键给软键盘选词」的保护；接入 `downloads_screen.dart` 与 `saved_library.dart` 两处裸搜索框。② 重写 `lib/search_input.dart` 的按键逻辑：在自己持有的 `FocusNode.onKeyEvent` 上（焦点冒泡第一站，早于 RawAutocomplete 上层 Shortcuts；EditableText 内部 Focus 不传 onKeyEvent、且外部节点不会被 `_usingExternalFocus` 分支覆盖，均已对照 Flutter 3.32 源码确认）接管方向键——联想打开时上下键驱动自维护的 `_nav` 高亮（`ValueListenableBuilder` 渲染选中项，替代 `AutocompleteHighlightedOption`），到达列表上 / 下边界后再越界时改为 `focusInDirection` 移出输入框；联想关闭时方向键直接移出；下拉打开时回车 / select 提交高亮项、Esc / goBack 先收起联想；同样带 composing 组字放行。电视与桌面、手机触屏共用同一组件，手机无键盘时节点回调不触发、行为不变。
+本轮（1.4.2+95）参照 guoappxx 项目，**移除红果源「取流方式选择项」，红果取流统一跟随 guoappxx 的无条件链路**（App CENC → 网页 `video_player_info` → 备用接口）。此前 1.3.0+87 引入的「红果源播放形式」下拉（红果源1 App 优先 / 红果源2 网页优先，开关 `hongguoPlayMode`）及其配套实现已整体下线：
+1. 红果取流（`native/core/provider_hongguo.go`、`provider_hongguo_native_media.go`、`app_settings.go`）。删除模式切换常量 `hongguoPlayModeAppFirst/WebFirst`、App 优先链路 `resolveHongguoMediaAppFirst` / `resolveHongguoWebMediaAppFirst` / `finalizeHongguoMedia` 与 ld+json 网页取流辅助函数；`resolveHongguoMedia` 改回 guoappxx 的无条件三档链，单集 CENC 走 `video_model/v1`、网页回退取 `video_player_info`、再落备用接口。删除 guoappxx 不存在的 `provider_hongguo_multi_media.go`、`provider_hongguo_spade.go`（spade_a 地址解密）及其测试。三个文件与 guoappxx 逐字节一致。
+2. 设置与状态（`native/core/app_settings.go`、`app_runtime.go`）。移除 `HongguoPlayMode` 字段、其校验与 `applyResourceSettings` 写入，移除 `Downloader` 的 `hongguoPlayMu` / `hongguoPlaySetting`；`resource-settings.json` 不再持久化红果播放形式。
+3. 界面（`lib/resource_settings.dart`、`lib/sources_screen.dart`）。删 `ResourceSettings.hongguoPlayMode` 字段；站源管理页删除「红果源播放形式」卡片及 `_loadResource` / `_saveHongguoPlayMode` 与相关状态。
+4. 本地 Web 服务器版（`native/server/web/index.html`、`app.js`、`app.css`，guoappxx 无此模块、guoapp3 独有，一并去除）。删顶栏「设置」入口、`renderSettings` 与 `#/settings` 路由、`settings-btn` 高亮及「红果源取流算法」单选、`.set-row` / `.set-actions` 样式。
+
+验证：Go `go build ./...` 通过、`go vet ./core` 干净，红果相关 `go test` 全部通过（仅 `TestDanmakuTruncationKeepsEmojiIntact` 为既有基线失败，与本轮无关）；Web 前端 `node --check` 通过；`provider_hongguo.go` / `provider_hongguo_native_media.go` / `app_settings.go` 与 guoappxx 逐字节一致。真实取流效果待重新构建安装后在真机 / 设备验收；按约定本轮为未验证开发快照。
+
+上一轮（1.4.2+94）修复 Android 电视端与 macOS / Windows 桌面端「搜索焦点跳不出搜索框」。根因两层：一是 `SearchInput` 的 `RawAutocomplete` 在联想下拉打开时把上下方向键映射为选项高亮导航且夹在 0..N-1，永远无法越界跳出输入框；二是裸 `TextField`（下载页、观看记录 / 追剧页搜索）在桌面与电视端被 `DefaultTextEditingShortcuts` 的「上下移光标到相邻行」动作吞掉方向键——单行框里移动无效却返回 handled，焦点原地卡死。修复：① 参考 guoappxian 项目移植 `RemoteTextInput`（`lib/remote_widgets.dart`），以后代 `Focus.onKeyEvent` 在文本框祖先层抢先处理方向键——上 / 下键 `focusInDirection` 移出搜索框、返回 / Esc 先尝试向下再向上移出并收起输入法、电视端确认键 `requestKeyboard()` 重新唤起输入法；生效范围为电视模式与 macOS / Windows / Linux 桌面（Android 手机不受影响），并加「输入法组字中（composing 非空）放行方向键给软键盘选词」的保护；接入 `downloads_screen.dart` 与 `saved_library.dart` 两处裸搜索框。② 重写 `lib/search_input.dart` 的按键逻辑：在自己持有的 `FocusNode.onKeyEvent` 上（焦点冒泡第一站，早于 RawAutocomplete 上层 Shortcuts；EditableText 内部 Focus 不传 onKeyEvent、且外部节点不会被 `_usingExternalFocus` 分支覆盖，均已对照 Flutter 3.32 源码确认）接管方向键——联想打开时上下键驱动自维护的 `_nav` 高亮（`ValueListenableBuilder` 渲染选中项，替代 `AutocompleteHighlightedOption`），到达列表上 / 下边界后再越界时改为 `focusInDirection` 移出输入框；联想关闭时方向键直接移出；下拉打开时回车 / select 提交高亮项、Esc / goBack 先收起联想；同样带 composing 组字放行。电视与桌面、手机触屏共用同一组件，手机无键盘时节点回调不触发、行为不变。
 
 验证：本机无 flutter / dart CLI，`flutter analyze` 与构建交由 GitHub Actions；焦点移出与联想导航的实际手感待 Android TV、macOS、Windows 真机 / 设备验收；按约定本轮为未验证开发快照。
 
@@ -971,7 +979,7 @@ python3 scripts/sync_source.py --check
 
 0.2.8 为检测详情增加展开 / 收起箭头，点击检测摘要即可切换；收起后仍显示检测结论、时间及复制入口。进入站源管理时历史详情默认收起，主动发起连接或目录检测时展开当前站源。各站源独立记录本次页面中的展开状态，手动收起后，轮询、检测完成及其他更新不会将详情重新展开。
 
-1.3.0 在站源管理页新增「红果源播放形式」下拉：播放红果源1 为 App 优先链路（移植自 hongguo-next，含 spade_a 地址解密与 m3u8 清单补全），播放红果源2 为本项目原有的网页优先链路（网页试看闸门 → App CENC → 备用接口），默认红果源2。选项随资源设置持久化到 `resource-settings.json`，只影响红果站源的取流顺序与成功率的取舍，不改变目录、搜索与其它站源行为；切换后立即对后续取流生效，不需要重新更新剧库。
+1.3.0 曾在站源管理页新增「红果源播放形式」下拉（红果源1 App 优先 / 红果源2 网页优先，开关 `hongguoPlayMode` 持久化到 `resource-settings.json`）。**该功能已在 1.4.2+95 参照 guoappxx 整体移除**：取流方式选择项与 `multi_video_model` / `spade_a` 解密等配套实现全部下线，红果取流统一改为跟随 guoappxx 的无条件链路（App CENC → 网页 `video_player_info` → 备用接口），站源管理页不再出现该下拉，本地 Web 服务器版的「设置」入口一并去除。
 
 1.2.0 在站源管理页顶部增加「源显示列表」入口（App 四端与本地 Web 服务器版均有）：按分组逐个开关每个站源（含内置与自定义）在首页的显示，隐藏集合按用户持久化并纳入备份。隐藏只影响首页站源分组、目录与默认站源选择，不影响该站源在站源管理中的更新、检测与已缓存内容；当前站源被隐藏时自动落到第一个可见站源，全部隐藏时首页给出提示。本地 Web 版入口在顶栏「自定义源」旁，隐藏集合持久化到数据目录 `source-visibility.json`。
 

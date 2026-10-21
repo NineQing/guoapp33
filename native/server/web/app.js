@@ -2048,61 +2048,6 @@ function renderSourceVisibility() {
   });
 }
 
-// 设置页：红果源取流算法切换（与 Flutter 站源管理里的选择项同一份资源设置，
-// 经核心的 resourceSettings / saveResourceSettings 读写，默认「网页优先」）。
-function renderSettings() {
-  view.innerHTML = '<div class="loading">正在加载设置…</div>';
-  return api({ action: 'resourceSettings' }).then(function (settings) {
-    var mode = settings.hongguoPlayMode || '2';
-    var options = [
-      { value: '1', text: '播放红果源1 · App 优先（移植实现）' },
-      { value: '2', text: '播放红果源2 · 网页优先（默认）' },
-    ];
-    var radioHtml = options.map(function (option) {
-      return (
-        '<label class="set-row">' +
-        '<input type="radio" name="hongguo-play-mode" value="' + option.value + '"' +
-        (mode === option.value ? ' checked' : '') + ' />' +
-        '<span>' + option.text + '</span>' +
-        '</label>'
-      );
-    }).join('');
-    view.innerHTML =
-      '<div class="lib">' +
-      '<div class="lib-tabs"><span class="lib-tab active">设置</span></div>' +
-      '<div style="font-size:13px;opacity:0.75;padding:4px 2px 12px">' +
-      '红果源的取流算法有两种实现，对红果站源的所有播放生效：' +
-      '</div>' +
-      radioHtml +
-      '<div class="set-actions">' +
-      '<button type="button" class="btn" id="set-save">保存</button>' +
-      '<span id="set-status" style="font-size:12px;opacity:0.7"></span>' +
-      '</div>' +
-      '</div>';
-    var saveButton = document.getElementById('set-save');
-    var status = document.getElementById('set-status');
-    saveButton.addEventListener('click', function () {
-      saveButton.disabled = true;
-      status.textContent = '';
-      var chosen = view.querySelector('input[name="hongguo-play-mode"]:checked');
-      if (!chosen) {
-        saveButton.disabled = false;
-        return;
-      }
-      api({
-        action: 'saveResourceSettings',
-        settings: Object.assign({}, settings, { hongguoPlayMode: chosen.value }),
-      }).then(function () {
-        status.textContent = '已保存';
-      }).catch(function (error) {
-        status.textContent = '保存失败：' + (error.message || '');
-      }).then(function () {
-        saveButton.disabled = false;
-      });
-    });
-  });
-}
-
 function bindSourceVisibilityView() {
   var toggles = view.querySelectorAll('.vis-toggle');
   Array.prototype.forEach.call(toggles, function (input) {
@@ -3118,18 +3063,12 @@ function render() {
     task = Promise.resolve().then(renderCustomSources);
   } else if (current.path === 'source-visibility') {
     task = renderSourceVisibility();
-  } else if (current.path === 'settings') {
-    task = Promise.resolve().then(renderSettings);
   } else if (current.path === 'live') {
     task = Promise.resolve().then(renderLiveView);
   } else {
     state.category = params.get('category') || '';
     state.page = Number(params.get('page') || 1);
     task = state.allSources && state.query ? renderCrossSearch() : renderCatalog();
-  }
-  var settingsButton = document.getElementById('settings-btn');
-  if (settingsButton) {
-    settingsButton.classList.toggle('active', current.path === 'settings');
   }
   var liveButton = document.getElementById('live-btn');
   if (liveButton) {

@@ -70,14 +70,6 @@ body {
 }
 .peer-chip { cursor: pointer; }
 .peer-chip:hover { border-color: var(--accent); color: #fff; }
-.set-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 12px; margin: 6px 0; border-radius: 8px;
-  background: var(--panel-2); border: 1px solid var(--line);
-  font-size: 13px; cursor: pointer;
-}
-.set-row input { margin: 0; accent-color: var(--accent); }
-.set-actions { display: flex; align-items: center; gap: 10px; padding: 12px 2px; }
 .view { padding: 18px; max-width: 1280px; margin: 0 auto; }
 .loading, .empty { padding: 40px; text-align: center; color: var(--muted); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
