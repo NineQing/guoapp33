@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"embed"
 	"encoding/json"
@@ -247,6 +248,24 @@ func abs(value int) int {
 		return -value
 	}
 	return value
+}
+
+// nextAvailablePort 从 start 起依次尝试监听，返回第一个可用的端口号（探测后立即释放）。
+// 供「默认端口被占用」时自动顺延使用，避免直接崩溃。
+func nextAvailablePort(host string, start int) (int, error) {
+	for candidate := start; candidate <= 65535; candidate++ {
+		listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(candidate)))
+		if err == nil {
+			_ = listener.Close()
+			return candidate, nil
+		}
+		var opErr *net.OpError
+		if !errors.As(err, &opErr) {
+			// 非「地址被占用」类错误（如权限不足）无从顺延，直接上抛。
+			return 0, err
+		}
+	}
+	return 0, errors.New("1-65535 范围内未找到可用端口")
 }
 
 // probeCodec 只抓文件头 64KB 判断编码/加密。多数站源的 moov 在头部即可判定；
@@ -1008,10 +1027,39 @@ func main() {
 		}
 	}()
 
-	address := net.JoinHostPort(*host, strconv.Itoa(*port))
+	portNumber := *port
+	address := net.JoinHostPort(*host, strconv.Itoa(portNumber))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		log.Fatalf("无法监听 %s：%v；可换一个端口，例如 -port 8001", address, err)
+		// 端口被占用（如默认 8000 已被别的程序占用）时不直接崩溃：
+		// 交互式启动提示用户输入新端口；无标准输入（双击 exe / 服务方式）时
+		// 输入流立即结束，自动顺延探测可用端口，让本地服务总能起来。
+		fmt.Printf("\n端口 %d 无法监听（%v），可能已被占用。\n", portNumber, err)
+		chosen := 0
+		fmt.Print("请输入要使用的端口（直接回车将自动选择可用端口）：")
+		if line, readErr := bufio.NewReader(os.Stdin).ReadString('\n'); readErr == nil {
+			trimmed := strings.TrimSpace(line)
+			if parsed, parseErr := strconv.Atoi(trimmed); parseErr == nil && parsed > 0 && parsed <= 65535 {
+				chosen = parsed
+			} else if trimmed != "" {
+				fmt.Printf("端口 %q 无效，改为自动选择。\n", trimmed)
+			}
+		}
+		if chosen == 0 {
+			probed, probeErr := nextAvailablePort(*host, portNumber)
+			if probeErr != nil {
+				log.Fatalf("无法在 %s 上找到可用端口：%v", *host, probeErr)
+			}
+			chosen = probed
+			fmt.Printf("自动选择可用端口 %d。\n", chosen)
+		}
+		portNumber = chosen
+		*port = portNumber
+		address = net.JoinHostPort(*host, strconv.Itoa(portNumber))
+		listener, err = net.Listen("tcp", address)
+		if err != nil {
+			log.Fatalf("无法监听 %s：%v", address, err)
+		}
 	}
 	fmt.Println()
 	fmt.Printf("%s %s 本地服务已启动\n", editionName(), appVersion)
