@@ -1667,7 +1667,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (_showFullscreen && !_television) {
       _rotate();
     } else {
-      Navigator.of(context).maybePop();
+      // 遥控 / 物理「返回」：只要下方还有路由（如视频列表页）就强制 pop 回去。
+      // 播放器路由在全屏时 canPop=false，maybePop 会落空，进而被系统当作
+      // 「无下方页面」直接退 app；改用 isFirst 判定 + 无条件 pop，确保只要
+      // 列表页在栈底就一定回到列表，只有确为首路由时才交还系统退出。
+      final navigator = Navigator.of(context);
+      if (ModalRoute.of(context)?.isFirst ?? false) {
+        navigator.maybePop();
+      } else {
+        navigator.pop();
+      }
     }
   }
 

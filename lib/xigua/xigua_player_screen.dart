@@ -1765,7 +1765,13 @@ class _PlayerScreenState extends State<XiguaPlayerScreen>
     if (_showFullscreen && !_television) {
       _rotate();
     } else {
-      Navigator.of(context).maybePop();
+      // 遥控 / 物理「返回」：只要下方还有路由（如视频列表页）就强制 pop 回去。
+      final navigator = Navigator.of(context);
+      if (ModalRoute.of(context)?.isFirst ?? false) {
+        navigator.maybePop();
+      } else {
+        navigator.pop();
+      }
     }
   }
 
