@@ -41,6 +41,22 @@ func isCFChallengeError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "站点要求浏览器验证")
 }
 
+// isHongguoProviderURL 判断目标是否落在红果（hongguo）站的已知 host 上。
+// 红果源不受 Cloudflare 403 挑战影响，无需（也不应）经公共 CF 中继代发；
+// 显式排除它，避免任何 CF 挑战形态的失败再拖入最慢的公共代理链（3×25s），
+// 保障红果目录/详情/取流的加载速度。
+func isHongguoProviderURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(parsed.Hostname()) {
+	case "hongguoduanju.com", "www.hongguoduanju.com", "djapi.999888456.xyz":
+		return true
+	}
+	return false
+}
+
 // fetchProviderTextViaCFRelay 对拼接加速自定义源在命中 Cloudflare 浏览器验证时，
 // 依次改经公共中继代理重取同一目标。命中任一中继即返回正文；全部失败回传错误。
 // 普通源与非 CF 挑战场景不会进入本函数（调用方按 isSplicedAcceleratorURL +

@@ -74,6 +74,31 @@ func TestIsCFChallengeError(t *testing.T) {
 	}
 }
 
+// 红果源不受 Cloudflare 403 影响，须被显式排除在 CF 中继之外：
+// isHongguoProviderURL 只认红果的已知 host，其它源（含拼接加速源）不命中。
+func TestIsHongguoProviderURL(t *testing.T) {
+	for _, u := range []string{
+		"https://hongguoduanju.com/detail?series_id=123",
+		"https://www.hongguoduanju.com/category/drama",
+		"https://djapi.999888456.xyz/api/hongguo/play?id=abc",
+		"http://HONGGUODUANJU.COM/xxx", // 大小写不敏感
+	} {
+		if !isHongguoProviderURL(u) {
+			t.Fatalf("红果 host 未被识别为红果：%s", u)
+		}
+	}
+	for _, u := range []string{
+		"https://cfkua.wokaotianshi.eu.org/https://subocj.com/api.php/provide/vod/",
+		"https://example.com/detail?series_id=123",
+		"https://hongguoduanju.com.evil.com/", // 仿冒 host，不应误判
+		"",
+	} {
+		if isHongguoProviderURL(u) {
+			t.Fatalf("非红果 host 被误判为红果：%s", u)
+		}
+	}
+}
+
 // 直连成功（非 CF 挑战、非拼接源）不应触碰中继：把中继链临时指向一个
 // 「中毒」端点（一旦被调用就计数），断言直连成功后该端点 0 次命中。
 func TestFetchProviderTextNoRelayOnSuccess(t *testing.T) {
