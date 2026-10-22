@@ -267,6 +267,10 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			// 首页 catalog 端点（landpage）不含 /player/，不受影响。
 			if strings.Contains(path, "/player/") {
 				downloader.markHongguoPlayerSuspended()
+				// 玩家端点有网页取流兜底 + 60s 负缓存：空 body 说明 App 档当前不供数，
+				// 重复请求只会拿到同样的空结果、叠加退避等待，对「首次打开」徒增耗时。
+				// 直接结束本档，交给网页/备用取流；App 恢复后靠负缓存过期自动切回。
+				break
 			}
 			continue
 		}
