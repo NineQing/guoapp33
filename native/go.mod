@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/bogdanfinn/fhttp v0.6.9
 	github.com/bogdanfinn/tls-client v1.16.0
+	github.com/mozillazg/go-pinyin v0.21.0
 	github.com/nathanstitt/omnidoc v1.0.0
 	golang.org/x/net v0.55.0
 	golang.org/x/sys v0.47.0
@@ -20,7 +21,6 @@ require (
 	github.com/bogdanfinn/websocket v1.5.6-barnius // indirect
 	github.com/cloudflare/circl v1.6.2 // indirect
 	github.com/klauspost/compress v1.18.2 // indirect
-	github.com/mozillazg/go-pinyin v0.21.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/tam7t/hpkp v0.0.0-20160821193359-2b70b4024ed5 // indirect
 	golang.org/x/crypto v0.51.0 // indirect

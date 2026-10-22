@@ -940,11 +940,31 @@ func (engine *nativeEngine) customMaccmsSources() []customMaccmsSource {
 }
 
 func (engine *nativeEngine) addCustomMaccmsSource(name, base, rule string) (customMaccmsSource, error) {
-	return engine.customRegistry.add(name, base, rule)
+	record, err := engine.customRegistry.add(name, base, rule)
+	if err == nil {
+		engine.registerCustomBrowserHost(record.Base)
+	}
+	return record, err
 }
 
 func (engine *nativeEngine) removeCustomMaccmsSource(id string) error {
 	return engine.customRegistry.remove(id)
+}
+
+// registerCustomBrowserHost 把自定义源 host 加入浏览器指纹传输白名单。
+// 自定义源（含 Cloudflare 前缀加速源）默认走标准 Go 客户端，缺 TLS/HTTP2 浏览器指纹
+// 与 Cookie 会话，容易被 CF bot 管理拦在 managed challenge 之外。登记后该 host 的
+// 目录/页面请求改走 Chrome 150 指纹传输，与内置 Browser 源一致，并复用源站 Set-Cookie
+// 下发的 cf_clearance，从而提升前缀加速源（cfkua.wokaotianshi.eu.org 这类）可用性。
+func (engine *nativeEngine) registerCustomBrowserHost(base string) {
+	if engine == nil || engine.downloader == nil || engine.downloader.browserTransport == nil {
+		return
+	}
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Host == "" {
+		return
+	}
+	engine.downloader.browserTransport.registerHost(parsed.Hostname())
 }
 
 func (engine *nativeEngine) updateCustomMaccmsSource(id, name, base, rule string) (customMaccmsSource, error) {
@@ -958,6 +978,7 @@ func (engine *nativeEngine) updateCustomMaccmsSource(id, name, base, rule string
 			return customMaccmsSource{}, errors.New("自定义源不存在")
 		}
 	}
+	engine.registerCustomBrowserHost(record.Base)
 	return record, nil
 }
 

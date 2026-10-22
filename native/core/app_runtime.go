@@ -67,6 +67,7 @@ type Downloader struct {
 	apiMu                 sync.Mutex
 	apiBase               string
 	apiFailures           map[string]time.Time
+	browserTransport      *huangguoBrowserTransport
 	legacyOnce            sync.Once
 	legacy                *legacyAPIClient
 	previewMu             sync.Mutex
@@ -279,7 +280,9 @@ func newNativeEngine(directory string) (*nativeEngine, error) {
 	transport.ResponseHeaderTimeout = 20 * time.Second
 	transport.Proxy = router.proxy
 	cdn := newCDNTransport(transport, newDNSResolver(transport))
-	d.client = &http.Client{Transport: newHuangguoBrowserTransport(cdn, d), Timeout: 45 * time.Second,
+	browserTransport := newHuangguoBrowserTransport(cdn, d)
+	d.browserTransport = browserTransport
+	d.client = &http.Client{Transport: browserTransport, Timeout: 45 * time.Second,
 		CheckRedirect: func(request *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return errors.New("站源重定向次数过多")
@@ -297,6 +300,11 @@ func newNativeEngine(directory string) (*nativeEngine, error) {
 	// loadSourceRecords 里的 isHuangguoProviderSource 要能认出 custom:<hash> 记录才不会丢任务状态。
 	engine.customRegistry = newCustomMaccmsRegistry(directory)
 	engine.customRegistry.load()
+	// 已存在的自定义源（含 Cloudflare 前缀加速源）也要登记进浏览器指纹传输白名单，
+	// 与运行时新增/更新路径一致，保证重启后其目录/页面请求仍走 Chrome 150 指纹。
+	for _, record := range engine.customMaccmsSources() {
+		engine.registerCustomBrowserHost(record.Base)
+	}
 	engine.loadSourceRecords()
 	engine.covers = newNativeCoverCache(directory, d)
 	engine.downloads = newNativeDownloads(engine)

@@ -66,7 +66,26 @@ func (transport *huangguoBrowserTransport) matches(request *http.Request) bool {
 	if request.URL.Scheme != "http" && request.URL.Scheme != "https" {
 		return false
 	}
-	return transport.hosts[strings.ToLower(request.URL.Host)] || transport.hosts[strings.ToLower(request.URL.Hostname())]
+	host := strings.ToLower(request.URL.Hostname())
+	transport.mu.Lock()
+	after := transport.hosts[strings.ToLower(request.URL.Host)] || transport.hosts[host]
+	transport.mu.Unlock()
+	return after
+}
+
+// registerHost 动态把一个 host 加入浏览器指纹传输白名单。
+// 自定义源（含「加速链接+真实网址」拼接形态的 Cloudflare 前缀加速源）在新增、更新与
+// 加载时调用它，让该 host 的目录/页面请求走 Chrome 150 指纹 + 独立 Cookie 会话，
+// 拿到与内置 Browser 源一致的 TLS/HTTP2 指纹，降低被 Cloudflare 判为 bot 的概率，
+// 并让源站 Set-Cookie 下发的 cf_clearance 在会话内被复用。
+func (transport *huangguoBrowserTransport) registerHost(host string) {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return
+	}
+	transport.mu.Lock()
+	transport.hosts[host] = true
+	transport.mu.Unlock()
 }
 
 func (transport *huangguoBrowserTransport) createClient(proxy string) (browserHTTPClient, error) {
