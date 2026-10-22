@@ -470,6 +470,16 @@ func (d *Downloader) fetchProviderText(ctx context.Context, rawURL, referer stri
 	if len(candidates) > 1 && lastErr != nil {
 		return "", fmt.Errorf("黄果来源请求失败：已尝试 %d 个域名，最后错误：%w", tried, lastErr)
 	}
+	// Cloudflare 前缀加速类「拼接自定义源」命中 403 浏览器验证时，参照 streamhub 的
+	// fetchViaProxy：改经公共 CORS/中继代理代发同一目标（换一个「数据中心出口 IP」），
+	// 往往能绕过针对当前出口 IP 的 CF 挑战。纯 HTTP 客户端无法自行执行 CF 的挑战 JS，
+	// 这是「尝试解决」而非保证绕过；仅当目标确为拼接加速 URL 且确被 CF 拦才进入，
+	// 正常工作源（直连 2xx）不会触发本分支。
+	if lastErr != nil && isCFChallengeError(lastErr) && isSplicedAcceleratorURL(rawURL) {
+		if relayText, relayErr := d.fetchProviderTextViaCFRelay(ctx, rawURL, referer); relayErr == nil {
+			return relayText, nil
+		}
+	}
 	return "", lastErr
 }
 
