@@ -249,21 +249,23 @@ func abs(value int) int {
 	return value
 }
 
-// probeCodec 抓一段开头判断编码。多数站源的 moov 在文件头部，足以判定；
-// 判断不出来就按可直连处理。
+// probeCodec 只抓文件头 64KB 判断编码/加密。多数站源的 moov 在头部即可判定；
+// 取不到（moov 在尾部或源不支持 Range）就退回按「可直连」处理，加密判断另由
+// resolve 带回的解密密钥兜底（红果等 CENC 源）。小数据 + 短超时，降低播放页
+// 打开时的阻塞耗时。
 func probeCodec(rawURL string) (encrypted bool, hevc bool) {
-	client := &http.Client{Transport: localTransport, Timeout: 20 * time.Second}
+	client := &http.Client{Transport: localTransport, Timeout: 10 * time.Second}
 	request, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
 		return false, false
 	}
-	request.Header.Set("Range", "bytes=0-1048575")
+	request.Header.Set("Range", "bytes=0-65535") // 只取前 64KB
 	response, err := client.Do(request)
 	if err != nil {
 		return false, false
 	}
 	defer response.Body.Close()
-	head, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	head, err := io.ReadAll(io.LimitReader(response.Body, 64<<10))
 	if err != nil {
 		return false, false
 	}
@@ -341,6 +343,20 @@ func handlePlay(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	wanted := pickQuality(first.Data.Qualities, quality)
+	// 并发探测：拿到首次 resolve 的媒体 URL 后立刻起一个后台 goroutine 预探编码
+	// （64KB、10s），与下方「可能的二次画质解析」重叠执行，避免把嗅探串行堆在
+	// 播放页关键路径上。结果走带缓冲 channel，即使最终 URL 变了被丢弃也不泄漏、
+	// 不阻塞；加密与否另有 resolve 带回的解密密钥（CENCKey）兜底。
+	type codecProbe struct {
+		enc  bool
+		hevc bool
+	}
+	probedURL := first.Data.URL
+	probeCh := make(chan codecProbe, 1)
+	go func() {
+		enc, hevc := probeCodec(probedURL)
+		probeCh <- codecProbe{enc, hevc}
+	}()
 	if wanted != 0 && wanted != first.Data.Quality {
 		probe["quality"] = wanted
 		probe["sequence"] = json.Number(strconv.FormatInt(nextSequence(), 10))
@@ -356,7 +372,16 @@ func handlePlay(writer http.ResponseWriter, request *http.Request) {
 	rawURL := plan.URL
 	mediaURL := rewriteLocalMedia(rawURL)
 	encryptedKey := plan.DecryptionKey
-	detectedEncrypted, hevc := probeCodec(rawURL)
+	var detectedEncrypted, hevc bool
+	if rawURL != probedURL {
+		// 最终 URL 与预探 URL 不同（换了画质）：直接对最终 URL 再探一次（廉价 64KB）。
+		// 后台那次结果留在缓冲里丢弃即可，无需等待。
+		detectedEncrypted, hevc = probeCodec(rawURL)
+	} else {
+		// 复用与二次解析并行的那次预探结果。
+		result := <-probeCh
+		detectedEncrypted, hevc = result.enc, result.hevc
+	}
 	encrypted := encryptedKey != "" || detectedEncrypted
 
 	answer := map[string]any{
