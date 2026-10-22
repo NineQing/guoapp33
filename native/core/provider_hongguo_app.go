@@ -42,6 +42,10 @@ type hongguoAppClient struct {
 	catalogMu           sync.Mutex
 	deviceMu            sync.Mutex
 	registerPausedUntil time.Time
+	// appSuspendedUntil：玩家 App 接口（video_detail / video_model）当前「空 body 未下发
+	// 数据」时的短负缓存窗口。窗口内详情/取流直接跳过这条 3 次重试+退避的慢链、改走网页，
+	// 提速详情与播放页；窗口过后自动重试，App 恢复即可无缝切回。只由 /player/ 端点空 body 触发。
+	appSuspendedUntil   time.Time
 	baseURL             string
 	state               hongguoCatalogState
 	details             map[string]hongguoDetailEntry
@@ -140,6 +144,36 @@ func hongguoAppQuery(deviceID, installID string) url.Values {
 	}
 }
 
+// clearHongguoPlayerSuspended 重置玩家 App 接口的负缓存窗口（App 恢复可用时调用）。
+func (downloader *Downloader) clearHongguoPlayerSuspended() {
+	client := downloader.hongguoClient()
+	client.mu.Lock()
+	client.appSuspendedUntil = time.Time{}
+	client.mu.Unlock()
+}
+
+// markHongguoPlayerSuspended 开启一个 60s 负缓存窗口：窗口内详情/取流跳过玩家 App
+// 档（3 次重试+退避的慢链）、直走网页。仅在玩家端点空 body 时由 hongguoAppRequest 触发。
+func (downloader *Downloader) markHongguoPlayerSuspended() {
+	client := downloader.hongguoClient()
+	client.mu.Lock()
+	client.appSuspendedUntil = time.Now().Add(hongguoPlayerSuspendWindow)
+	client.mu.Unlock()
+}
+
+// hongguoPlayerSuspended 判断玩家 App 档是否处于「暂不可用」负缓存窗口内，
+// 供详情/取流链决定是否跳过 App 档改走网页。
+func (downloader *Downloader) hongguoPlayerSuspended() bool {
+	client := downloader.hongguoClient()
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return time.Now().Before(client.appSuspendedUntil)
+}
+
+// 玩家 App 接口（video_detail / video_model）空 body 时跳过该档的负缓存窗口时长。
+// 窗口内详情/播放页直接走更快的网页取流；过后自动重试，App 恢复即无缝切回。
+const hongguoPlayerSuspendWindow = 60 * time.Second
+
 func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, path string, extra url.Values, payload any) (map[string]any, error) {
 	client := downloader.hongguoClient()
 	comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
@@ -228,6 +262,12 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		}
 		if len(content) == 0 {
 			lastErr = errors.New("红果 App 接口未返回有效数据")
+			// 玩家 App 端点（video_detail / video_model）空 body 时开启短负缓存窗口，
+			// 让紧随其后的详情/取流跳过这条「3 次重试 + 退避」的慢链、改走网页；
+			// 首页 catalog 端点（landpage）不含 /player/，不受影响。
+			if strings.Contains(path, "/player/") {
+				downloader.markHongguoPlayerSuspended()
+			}
 			continue
 		}
 		if len(content) > providerMaxBodyBytes {
@@ -242,6 +282,10 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		code := firstNonEmpty(mapString(result, "code", "Code", "status_code"), mapString(nestedMap(result, "BaseResp"), "StatusCode"))
 		if code != "" && code != "0" {
 			return nil, fmt.Errorf("红果 App 接口暂不可用（%s）", truncate(code, 20))
+		}
+		// 玩家 App 接口恢复正常，清除负缓存窗口，后续详情/取流重新走 App 档。
+		if strings.Contains(path, "/player/") {
+			downloader.clearHongguoPlayerSuspended()
 		}
 		return result, nil
 	}

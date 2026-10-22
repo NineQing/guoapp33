@@ -133,6 +133,13 @@ func (d *Downloader) fetchHongguoChapters(ctx context.Context, sourceID string) 
 	if sourceID == "" {
 		return "", nil, fmt.Errorf("empty hongguo sourceID")
 	}
+	// 玩家 App 详情档处于「暂不可用」负缓存窗口时，跳过这条 3 次重试+退避的慢链、
+	// 直走网页详情，提速详情页；窗口过期后自动恢复 App 优先。
+	if d.hongguoPlayerSuspended() {
+		if title, chapters, webErr := d.fetchHongguoWebChapters(ctx, sourceID); webErr == nil {
+			return title, chapters, nil
+		}
+	}
 	entry, appErr := d.hongguoAppDetail(ctx, sourceID)
 	if appErr == nil {
 		return entry.Drama.DisplayTitle(), append([]Chapter(nil), entry.Chapters...), nil
@@ -197,6 +204,13 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	videoID := strings.TrimPrefix(task.Chapter.VideoURL, "hongguo-cenc://")
 	if !hongguoNumericID.MatchString(videoID) || !hongguoNumericID.MatchString(seriesID) {
 		return providerMedia{}, fmt.Errorf("红果章节 ID 无效，请重新获取章节")
+	}
+	// 玩家 App 取流档处于「暂不可用」负缓存窗口时，跳过这条 3 次重试+退避的慢链、
+	// 直走网页取流，提速播放页；窗口过期后自动恢复 App 优先。
+	if d.hongguoPlayerSuspended() {
+		if media, pageErr := d.resolveHongguoWebMedia(ctx, seriesID, videoID); pageErr == nil {
+			return media, nil
+		}
 	}
 	media, nativeErr := d.resolveHongguoAppMedia(ctx, videoID)
 	if nativeErr == nil {

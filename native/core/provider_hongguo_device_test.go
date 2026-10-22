@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,37 @@ func TestHongguoSignedRequestKeepsCurrentDevice(t *testing.T) {
 	}
 	if got := *requests; len(got) != 1 || got[0] != "detail@7" {
 		t.Fatal("unexpected request sequence", got)
+	}
+}
+
+// TestHongguoPlayerSuspendOnEmptyBody 验证：玩家 App 端点（/player/）空 body 时开启
+// 60s 负缓存窗口；清除后关闭；且 window 语义正确（挂起判断为纯状态读取，无副作用）。
+func TestHongguoPlayerSuspendOnEmptyBody(t *testing.T) {
+	playerPath := "/novel/player/video_detail/v1/"
+	d := sourceFixtureDownloader(t, func(request *http.Request) (*http.Response, error) {
+		if strings.Contains(request.URL.Path, "/player/") {
+			return sourceFixtureResponse(request, http.StatusOK, ""), nil // 玩家端点空 body
+		}
+		return sourceFixtureResponse(request, http.StatusOK, `{"code":0,"data":{}}`), nil
+	})
+	d.cfg.Retries = 1
+	client := d.hongguoClient()
+	client.state.DeviceID, client.state.InstallID, client.state.Registered = "7", "8", true
+
+	if d.hongguoPlayerSuspended() {
+		t.Fatal("初始不应处于挂起窗口")
+	}
+	// 玩家端点空 body → 挂起窗口开启（hongguoAppRequest 内部触发 markHongguoPlayerSuspended）
+	if _, err := d.hongguoAppRequest(context.Background(), http.MethodPost, playerPath, nil, map[string]any{"series_id": "1"}); err == nil {
+		t.Fatal("空 body 玩家请求应返回错误")
+	}
+	if !d.hongguoPlayerSuspended() {
+		t.Fatal("玩家端点空 body 后未开启负缓存窗口")
+	}
+	// 清除后关闭
+	d.clearHongguoPlayerSuspended()
+	if d.hongguoPlayerSuspended() {
+		t.Fatal("清除后仍处挂起窗口")
 	}
 }
 
